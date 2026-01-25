@@ -31,7 +31,7 @@ for (const file of commandFiles) {
 }
 
 // Bot ready event
-client.once('ready', () => {
+client.once('clientReady', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   console.log(`📝 Loaded ${client.commands.size} commands`);
 });
