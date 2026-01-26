@@ -1,17 +1,16 @@
 {
   "name": "linearflow",
   "version": "1.0.0",
-  "description": "An opensource discord bot application that connects to Linear.app workspaces for issue management and notification",
-  "main": "index.js",
+  "description": "Discord bot for Linear issue management",
+  "main": "src/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node src/index.js",
+    "dev": "node src/index.js",
+    "deploy": "node deploy-commands.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
-    "@linear/sdk": "^71.0.0",
-    "discord.js": "^14.25.1",
-    "dotenv": "^17.2.3"
+    "discord.js": "^14.14.1",
+    "@linear/sdk": "^23.0.0",
+    "dotenv": "^16.3.1"
   }
 }

@@ -4,7 +4,6 @@ const path = require('path');
 const { Client, Collection, GatewayIntentBits } = require('discord.js');
 const { LinearClient } = require('@linear/sdk');
 
-// Initialize Discord client
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -13,14 +12,13 @@ const client = new Client({
   ],
 });
 
-// Initialize Linear client
 const linearClient = new LinearClient({
   apiKey: process.env.LINEAR_API_KEY,
 });
 
 // Load commands
 client.commands = new Collection();
-const commandsPath = path.join(__dirname, 'commands');
+const commandsPath = path.join(__dirname, 'commands'); // Already in src, so just 'commands'
 const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
 
 for (const file of commandFiles) {
@@ -30,13 +28,11 @@ for (const file of commandFiles) {
   console.log(`Loaded command: ${command.data.name}`);
 }
 
-// Bot ready event
 client.once('clientReady', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   console.log(`📝 Loaded ${client.commands.size} commands`);
 });
 
-// Handle slash commands
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -58,5 +54,4 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-// Login to Discord
 client.login(process.env.DISCORD_TOKEN);
