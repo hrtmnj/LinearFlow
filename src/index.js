@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { Client, Collection, GatewayIntentBits } = require('discord.js');
 const { LinearClient } = require('@linear/sdk');
+const WebhookServer = require('./webhook-server');
 
 const client = new Client({
   intents: [
@@ -31,6 +32,10 @@ for (const file of commandFiles) {
 client.once('clientReady', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   console.log(`📝 Loaded ${client.commands.size} commands`);
+
+  // Start webhook server
+  const webhookServer = new WebhookServer(client);
+  webhookServer.start();
 });
 
 client.on('interactionCreate', async interaction => {

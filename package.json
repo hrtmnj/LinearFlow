@@ -9,8 +9,10 @@
     "deploy": "node deploy-commands.js"
   },
   "dependencies": {
-    "discord.js": "^14.14.1",
     "@linear/sdk": "^23.0.0",
-    "dotenv": "^16.3.1"
+    "body-parser": "^2.2.2",
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.3.1",
+    "express": "^5.2.1"
   }
 }

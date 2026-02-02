@@ -56,13 +56,13 @@ module.exports = {
       }
 
       // Create the issue in Linear
-const issue = await linearClient.createIssue({
-  teamId: teamId,
-  title: title,
-  description: `**Source:** ${source}
-  ${description}`,
-  priority: 3,
-});
+      const issue = await linearClient.createIssue({
+        teamId: teamId,
+        title: title,
+        description: `**Source:** ${source}
+**User Description:** ${description}`,
+        priority: 3,
+      });
 
       // Get the created issue details
       const createdIssue = await issue.issue;
