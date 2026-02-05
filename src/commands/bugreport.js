@@ -83,9 +83,16 @@ module.exports = {
       // Build attachment links for description
       let attachmentLinks = '';
       if (attachments.length > 0) {
-        attachmentLinks = '\n\n**Attachments:**\n';
+        attachmentLinks = '\n\n**Attachments:**\n\n';
         attachments.forEach((att, index) => {
-          attachmentLinks += `${index + 1}. [${att.name}](${att.url})\n`;
+          // Check if it's an image (png, jpg, jpeg, gif, webp)
+          if (att.contentType && att.contentType.startsWith('image/')) {
+            // Embed image directly
+            attachmentLinks += `![${att.name}](${att.url})\n\n`;
+          } else {
+            // Link for videos and other files
+            attachmentLinks += `${index + 1}. [${att.name}](${att.url})\n`;
+          }
         });
       }
 
@@ -130,8 +137,8 @@ module.exports = {
         // Create the embed
         const embed = new EmbedBuilder()
           .setColor(0x5E6AD2)
-          .setTitle('✅ Bug Report Created')
-          .setDescription(identifier ? `**[${identifier}](${createdIssue.url})** - ${title}` : title)
+          .setTitle('Bug Report Created')
+          .setDescription(identifier ? `**${identifier}** - ${title}` : title)
           .addFields(
             { name: 'Reported by', value: interaction.user.tag, inline: true },
             { name: 'Team', value: 'Gateway', inline: true },
