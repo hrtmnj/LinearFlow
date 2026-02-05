@@ -69,32 +69,28 @@ module.exports = {
 
       // Get the created issue details
       const createdIssue = await issue.issue;
-      console.log('Created issue:', JSON.stringify(createdIssue, null, 2));
       
       if (createdIssue) {
+
+        // Extract identifier from URL
+        // URL format: https://linear.app/kizmotek/issue/INK-17/test
+        const identifier = createdIssue.url ? createdIssue.url.split('/issue/')[1]?.split('/')[0] : null;
 
         // Build Discord message URL
         const messageUrl = `https://discord.com/channels/${interaction.guildId}/${interaction.channelId}/${interaction.id}`;
 
-        // Wait for the issue to fully load with all properties
-        const fullIssue = await linearClient.issue(createdIssue.id);
-        console.log('Full issue:', JSON.stringify(fullIssue, null, 2));
-
         await linearClient.createAttachment({
-          issueId: fullIssue.id,
+          issueId: createdIssue.id,
           title: 'Bug Report from Discord',
           url: messageUrl,
-          subtitle: `#${interaction.channel.name} - ${interaction.user.tag} :: Issue ${fullIssue.identifier} created`,
+          subtitle: `#${interaction.channel.name} - ${interaction.user.tag} :: Issue ${identifier} created`,
         });
-
-        // Log the full response to see what's available
-        console.log('Issue response:', JSON.stringify(fullIssue, null, 2));
 
         // Create the embed
         const embed = new EmbedBuilder()
           .setColor(0x5E6AD2)
           .setTitle('Bug Report Created')
-          .setDescription(`**${createdIssue.identifier}** - ${title}`)
+          .setDescription(`**${identifier}** - ${title}`)
           .addFields(
             { name: 'Reported by', value: interaction.user.tag, inline: true },
             { name: 'Team', value: 'Gateway', inline: true },
