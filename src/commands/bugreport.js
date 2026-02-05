@@ -83,7 +83,7 @@ module.exports = {
           issueId: createdIssue.id,
           title: 'Bug Report from Discord',
           url: messageUrl,
-          subtitle: `#${interaction.channel.name} - ${interaction.user.tag} :: Issue ${identifier} created`,
+          subtitle: `#${interaction.channel?.name || 'unknown'} - ${interaction.user.tag} :: Issue ${identifier} created`,
         });
 
         // Create the embed
