@@ -64,8 +64,12 @@ module.exports = {
         priority: 3,
       });
 
+      // Log the full response to see what's available
+      console.log('Issue response:', JSON.stringify(issue, null, 2));
+
       // Get the created issue details
       const createdIssue = await issue.issue;
+      console.log('Created issue:', JSON.stringify(createdIssue, null, 2));
       
       if (createdIssue) {
 
@@ -74,6 +78,7 @@ module.exports = {
 
         // Wait for the issue to fully load with all properties
         const fullIssue = await linearClient.issue(createdIssue.id);
+        console.log('Full issue:', JSON.stringify(fullIssue, null, 2));
 
         await linearClient.createAttachment({
           issueId: fullIssue.id,
@@ -81,6 +86,9 @@ module.exports = {
           url: messageUrl,
           subtitle: `#${interaction.channel.name} - ${interaction.user.tag} :: Issue ${fullIssue.identifier} created`,
         });
+
+        // Log the full response to see what's available
+        console.log('Issue response:', JSON.stringify(fullIssue, null, 2));
 
         // Create the embed
         const embed = new EmbedBuilder()
