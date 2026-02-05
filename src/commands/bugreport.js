@@ -72,6 +72,9 @@ module.exports = {
         // Build Discord message URL
         const messageUrl = `https://discord.com/channels/${interaction.guildId}/${interaction.channelId}/${interaction.id}`;
 
+        // Wait for the issue to fully load with all properties
+        const fullIssue = await linearClient.issue(createdIssue.id);
+        
         await linearClient.createAttachment({
           issueId: createdIssue.id,
           title: 'Bug Report from Discord',
