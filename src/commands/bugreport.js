@@ -1,6 +1,18 @@
 const { SlashCommandBuilder, EmbedBuilder  } = require('discord.js');
 const { LinearClient } = require('@linear/sdk');
 
+function getLabelIds(source) {
+  const labelIds = [];
+  
+  if (source === 'QA' && process.env.LINEAR_LABEL_QA) {
+    labelIds.push(process.env.LINEAR_LABEL_QA);
+  } else if (source === 'CS' && process.env.LINEAR_LABEL_CS) {
+    labelIds.push(process.env.LINEAR_LABEL_CS);
+  }
+  
+  return labelIds;
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('linearflow')
@@ -103,6 +115,7 @@ module.exports = {
         description: `**Source:** ${source}
 **User Description:** ${description}\n${attachmentLinks}`,
         priority: 3,
+        labelIds: getLabelIds(source),
       });
 
       // Get the created issue details

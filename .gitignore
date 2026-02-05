@@ -16,6 +16,7 @@ yarn-error.log*
 # JS Files
 deploy-commands.js
 get-teams.js
+get-label.js
 
 # OS files
 .DS_Store
