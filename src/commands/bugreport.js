@@ -74,12 +74,12 @@ module.exports = {
 
         // Wait for the issue to fully load with all properties
         const fullIssue = await linearClient.issue(createdIssue.id);
-        
+
         await linearClient.createAttachment({
-          issueId: createdIssue.id,
+          issueId: fullIssue.id,
           title: 'Bug Report from Discord',
           url: messageUrl,
-          subtitle: `#${interaction.channel.name} - ${interaction.user.tag} :: Issue ${createdIssue.identifier} created`,
+          subtitle: `#${interaction.channel.name} - ${interaction.user.tag} :: Issue ${fullIssue.identifier} created`,
         });
 
         // Create the embed
