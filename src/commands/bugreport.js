@@ -31,6 +31,24 @@ module.exports = {
             .setDescription('Detailed description of the issue')
             .setRequired(true)
         )
+        .addAttachmentOption(option =>
+          option
+            .setName('attachment1')
+            .setDescription('Screenshot or video (optional)')
+            .setRequired(false)
+        )
+        .addAttachmentOption(option =>
+          option
+            .setName('attachment2')
+            .setDescription('Additional screenshot or video (optional)')
+            .setRequired(false)
+        )
+        .addAttachmentOption(option =>
+          option
+            .setName('attachment3')
+            .setDescription('Additional screenshot or video (optional)')
+            .setRequired(false)
+        )
     ),
 
   async execute(interaction) {
@@ -47,6 +65,13 @@ module.exports = {
       const source = interaction.options.getString('source');
       const teamId = process.env.LINEAR_TEAM_GATEWAY;
 
+      // Get attachments
+      const attachment1 = interaction.options.getAttachment('attachment1');
+      const attachment2 = interaction.options.getAttachment('attachment2');
+      const attachment3 = interaction.options.getAttachment('attachment3');
+
+      const attachments = [attachment1, attachment2, attachment3].filter(Boolean);
+
       // Check if team ID is set
       if (!teamId) {
         await interaction.editReply({
@@ -55,17 +80,23 @@ module.exports = {
         return;
       }
 
+      // Build attachment links for description
+      let attachmentLinks = '';
+      if (attachments.length > 0) {
+        attachmentLinks = '\n\n**Attachments:**\n';
+        attachments.forEach((att, index) => {
+          attachmentLinks += `${index + 1}. [${att.name}](${att.url})\n`;
+        });
+      }
+
       // Create the issue in Linear
       const issue = await linearClient.createIssue({
         teamId: teamId,
         title: title,
         description: `**Source:** ${source}
-**User Description:** ${description}`,
+**User Description:** ${description}\n${attachmentLinks}`,
         priority: 3,
       });
-
-      // Log the full response to see what's available
-      console.log('Issue response:', JSON.stringify(issue, null, 2));
 
       // Get the created issue details
       const createdIssue = await issue.issue;
@@ -86,11 +117,21 @@ module.exports = {
           subtitle: `#${interaction.channel?.name || 'unknown'} - ${interaction.user.tag} :: Issue ${identifier} created`,
         });
 
+        // Add each Discord attachment as a Linear attachment
+        for (const attachment of attachments) {
+          await linearClient.createAttachment({
+            issueId: createdIssue.id,
+            title: attachment.name,
+            url: attachment.url,
+            subtitle: `Uploaded by ${interaction.user.tag}`,
+          });
+        }
+
         // Create the embed
         const embed = new EmbedBuilder()
           .setColor(0x5E6AD2)
-          .setTitle('Bug Report Created')
-          .setDescription(`**${identifier}** - ${title}`)
+          .setTitle('✅ Bug Report Created')
+          .setDescription(identifier ? `**[${identifier}](${createdIssue.url})** - ${title}` : title)
           .addFields(
             { name: 'Reported by', value: interaction.user.tag, inline: true },
             { name: 'Team', value: 'Gateway', inline: true },
@@ -100,6 +141,15 @@ module.exports = {
           .setURL(createdIssue.url)
           .setTimestamp()
           .setFooter({ text: 'LinearFlow Bot' });
+
+        // Add attachment info to embed
+        if (attachments.length > 0) {
+          embed.addFields({
+            name: 'Attachments',
+            value: attachments.map(att => `📎 ${att.name}`).join('\n'),
+            inline: false
+          });
+        }
 
         // Send the embed
         await interaction.editReply({ embeds: [embed] });
