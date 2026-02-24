@@ -91,7 +91,7 @@ module.exports = {
 
       // Get decline/archive reason from comments if archived or canceled
       let declineReason = null;
-      if (stateName.toLowerCase() === 'canceled' || stateName.toLowerCase() === 'archived') {
+      if (stateName.toLowerCase() === 'canceled' || stateName.toLowerCase() === 'archive') {
         const comments = await issue.comments();
         
         console.log('Total comments:', comments.nodes.length);
@@ -133,7 +133,7 @@ module.exports = {
       const embed = new EmbedBuilder()
         .setColor(stateName.toLowerCase() === 'done' ? 0x00FF00 : 
                  stateName.toLowerCase() === 'canceled' ? 0xFF0000 : 
-                 stateName.toLowerCase() === 'archived' ? 0xFF0000 :
+                 stateName.toLowerCase() === 'archive' ? 0xFF0000 :
                  stateName.toLowerCase() === 'in progress' ? 0xFFFF00 : 
                  0x5E6AD2)
         .setTitle(`${currentIdentifier} - ${issue.title}`)
@@ -172,7 +172,7 @@ module.exports = {
       // Add decline reason if exists (for archived/canceled tickets)
       if (declineReason) {
         embed.addFields({
-          name: '❌ Decline Reason',
+          name: 'Decline Reason',
           value: declineReason,
           inline: false
         });
