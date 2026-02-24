@@ -47,52 +47,47 @@ async function uploadFileToLinear(linearClient, attachment) {
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('linearflow')
-    .setDescription('Create a issue report')
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('reportissue')
-        .setDescription('Report an issue through our gateway triage')
-        .addStringOption(option =>
-          option
-            .setName('source')
-            .setDescription('Source of the issue')
-            .setRequired(true)
-            .addChoices(
-              { name: 'Quality Assurance', value: 'QA' },
-              { name: 'Community Support', value: 'CS' }
-            )
+    .setName('reportissue')
+    .setDescription('Report an issue through our gateway triage')
+    .addStringOption(option =>
+      option
+        .setName('source')
+        .setDescription('Source of the issue')
+        .setRequired(true)
+        .addChoices(
+          { name: 'Quality Assurance', value: 'QA' },
+          { name: 'Community Support', value: 'CS' }
         )
-        .addStringOption(option =>
-          option
-            .setName('title')
-            .setDescription('Brief title of the issue')
-            .setRequired(true)
-        )
-        .addStringOption(option =>
-          option
-            .setName('description')
-            .setDescription('Detailed description of the issue')
-            .setRequired(true)
-        )
-        .addAttachmentOption(option =>
-          option
-            .setName('attachment1')
-            .setDescription('Screenshot or video (optional)')
-            .setRequired(false)
-        )
-        .addAttachmentOption(option =>
-          option
-            .setName('attachment2')
-            .setDescription('Additional screenshot or video (optional)')
-            .setRequired(false)
-        )
-        .addAttachmentOption(option =>
-          option
-            .setName('attachment3')
-            .setDescription('Additional screenshot or video (optional)')
-            .setRequired(false)
-        )
+    )
+    .addStringOption(option =>
+      option
+        .setName('title')
+        .setDescription('Brief title of the issue')
+        .setRequired(true)
+    )
+    .addStringOption(option =>
+      option
+        .setName('description')
+        .setDescription('Detailed description of the issue')
+        .setRequired(true)
+    )
+    .addAttachmentOption(option =>
+      option
+        .setName('attachment1')
+        .setDescription('Screenshot or video (optional)')
+        .setRequired(false)
+    )
+    .addAttachmentOption(option =>
+      option
+        .setName('attachment2')
+        .setDescription('Additional screenshot or video (optional)')
+        .setRequired(false)
+    )
+    .addAttachmentOption(option =>
+      option
+        .setName('attachment3')
+        .setDescription('Additional screenshot or video (optional)')
+        .setRequired(false)
     ),
 
   async execute(interaction) {
