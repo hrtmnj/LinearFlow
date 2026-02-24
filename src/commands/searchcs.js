@@ -147,7 +147,7 @@ module.exports = {
       // Add duplicate info if exists
       if (duplicateOf) {
         embed.addFields({
-          name: '🔗 Duplicate Of',
+          name: 'Duplicate Of',
           value: `This ticket is marked as a duplicate of **${duplicateOf}**`,
           inline: false
         });
