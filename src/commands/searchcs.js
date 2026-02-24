@@ -125,10 +125,10 @@ module.exports = {
         .setURL(issue.url)
         .addFields(
           { name: 'Status', value: stateName, inline: true },
-          { name: 'Priority', value: issue.priority === 1 ? '🔴 Urgent' : 
-                                     issue.priority === 2 ? '🟠 High' : 
-                                     issue.priority === 3 ? '🟡 Medium' : 
-                                     issue.priority === 4 ? '🔵 Low' : '⚪ None', inline: true }
+          { name: 'Priority', value: issue.priority === 1 ? 'Urgent' : 
+                                     issue.priority === 2 ? 'High' : 
+                                     issue.priority === 3 ? 'Medium' : 
+                                     issue.priority === 4 ? 'Low' : 'None', inline: true }
         )
         .setTimestamp()
         .setFooter({ text: 'LinearFlow Bot' });
