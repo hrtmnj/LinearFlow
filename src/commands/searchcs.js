@@ -8,7 +8,7 @@ module.exports = {
     .addStringOption(option =>
       option
         .setName('ticket_id')
-        .setDescription('The ticket ID (e.g., INK-53)')
+        .setDescription('The ticket ID (e.g., INK-123)')
         .setRequired(true)
     ),
 
@@ -103,13 +103,16 @@ module.exports = {
         }
       }
 
-      // Check for duplicates (related issues)
-      let duplicateOf = null;
+      // Check for duplicates (related issues) and get full info
+      let duplicateInfo = null;
       const relations = await issue.relations();
       for (const relation of relations.nodes) {
         const relatedIssue = await relation.relatedIssue;
         if (relatedIssue && relation.type === 'duplicate') {
-          duplicateOf = relatedIssue.identifier;
+          duplicateInfo = {
+            identifier: relatedIssue.identifier,
+            title: relatedIssue.title
+          };
           break;
         }
       }
@@ -145,10 +148,10 @@ module.exports = {
       });
 
       // Add duplicate info if exists
-      if (duplicateOf) {
+      if (duplicateInfo) {
         embed.addFields({
           name: 'Duplicate Of',
-          value: `This ticket is marked as a duplicate of **${duplicateOf}**`,
+          value: `This ticket is marked as a duplicate of **${duplicateInfo.identifier} - ${duplicateInfo.title}**`,
           inline: false
         });
       }
