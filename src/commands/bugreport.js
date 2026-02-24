@@ -13,6 +13,38 @@ function getLabelIds(source) {
   return labelIds;
 }
 
+async function uploadFileToLinear(linearClient, attachment) {
+  try {
+    // Fetch the file from Discord CDN
+    const response = await fetch(attachment.url);
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    // Request upload URL from Linear
+    const uploadPayload = await linearClient.fileUpload(
+      attachment.contentType || 'application/octet-stream',
+      attachment.name,
+      buffer.length
+    );
+
+    // Upload the file to Linear's storage
+    await fetch(uploadPayload.uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': attachment.contentType || 'application/octet-stream',
+        'Cache-Control': 'public, max-age=31536000',
+      },
+      body: buffer,
+    });
+
+    // Return the asset URL that Linear can use
+    return uploadPayload.assetUrl;
+  } catch (error) {
+    console.error('Error uploading file to Linear:', error);
+    return null;
+  }
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('linearflow')
@@ -92,18 +124,31 @@ module.exports = {
         return;
       }
 
-      // Build attachment links for description
+      // Upload files to Linear IN PARALLEL for better performance
       let attachmentLinks = '';
+      
       if (attachments.length > 0) {
         attachmentLinks = '\n\n**Attachments:**\n\n';
+        
+        // Upload all files in parallel
+        const uploadPromises = attachments.map(att => uploadFileToLinear(linearClient, att));
+        const uploadedUrls = await Promise.all(uploadPromises);
+        
+        // Build attachment links with uploaded URLs
         attachments.forEach((att, index) => {
-          // Check if it's an image (png, jpg, jpeg, gif, webp)
+          const assetUrl = uploadedUrls[index];
+          const urlToUse = assetUrl || att.url; // Fallback to Discord CDN if upload failed
+          
+          // Check if it's an image or video
           if (att.contentType && att.contentType.startsWith('image/')) {
             // Embed image directly
-            attachmentLinks += `![${att.name}](${att.url})\n\n`;
+            attachmentLinks += `![${att.name}](${urlToUse})\n\n`;
+          } else if (att.contentType && att.contentType.startsWith('video/')) {
+            // Embed video directly
+            attachmentLinks += `![${att.name}](${urlToUse})\n\n`;
           } else {
-            // Link for videos and other files
-            attachmentLinks += `${index + 1}. [${att.name}](${att.url})\n`;
+            // Link for other files
+            attachmentLinks += `[${att.name}](${urlToUse})\n\n`;
           }
         });
       }
@@ -124,7 +169,6 @@ module.exports = {
       if (createdIssue) {
 
         // Extract identifier from URL
-        // URL format: https://linear.app/kizmotek/issue/INK-17/test
         const identifier = createdIssue.url ? createdIssue.url.split('/issue/')[1]?.split('/')[0] : null;
 
         // Build Discord message URL
@@ -136,16 +180,6 @@ module.exports = {
           url: messageUrl,
           subtitle: `#${interaction.channel?.name || 'unknown'} - ${interaction.user.tag} :: Issue ${identifier} created`,
         });
-
-        // Add each Discord attachment as a Linear attachment
-        for (const attachment of attachments) {
-          await linearClient.createAttachment({
-            issueId: createdIssue.id,
-            title: attachment.name,
-            url: attachment.url,
-            subtitle: `Uploaded by ${interaction.user.tag}`,
-          });
-        }
 
         // Create the embed
         const embed = new EmbedBuilder()
