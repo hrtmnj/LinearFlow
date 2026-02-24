@@ -89,23 +89,9 @@ module.exports = {
         }
       }
 
-      // Get issue history to check if it was declined from triage
-      const history = await issue.history();
-      let declinedFromTriage = false;
-      
-      // Check if issue was moved from Triage to Canceled/Archived
-      for (const historyItem of history.nodes) {
-        if (historyItem.fromState?.name?.toLowerCase() === 'triage' && 
-            (historyItem.toState?.name?.toLowerCase() === 'canceled' || 
-             historyItem.toState?.name?.toLowerCase() === 'archived')) {
-          declinedFromTriage = true;
-          break;
-        }
-      }
-
-      // Get comments and find decline reason
+      // Get decline/archive reason from comments if archived or canceled
       let declineReason = null;
-      if (declinedFromTriage || stateName.toLowerCase() === 'canceled' || stateName.toLowerCase() === 'archived') {
+      if (stateName.toLowerCase() === 'canceled' || stateName.toLowerCase() === 'archived') {
         const comments = await issue.comments();
         
         if (comments.nodes.length > 0) {
@@ -117,6 +103,9 @@ module.exports = {
           if (declineReason.length > 200) {
             declineReason = declineReason.substring(0, 197) + '...';
           }
+        } else {
+          // No comments found - use generic message
+          declineReason = 'This ticket was declined without a specific reason provided.';
         }
       }
 
@@ -138,6 +127,7 @@ module.exports = {
       const embed = new EmbedBuilder()
         .setColor(stateName.toLowerCase() === 'done' ? 0x00FF00 : 
                  stateName.toLowerCase() === 'canceled' ? 0xFF0000 : 
+                 stateName.toLowerCase() === 'archived' ? 0xFF0000 :
                  stateName.toLowerCase() === 'in progress' ? 0xFFFF00 : 
                  0x5E6AD2)
         .setTitle(`${currentIdentifier} - ${issue.title}`)
@@ -147,7 +137,7 @@ module.exports = {
           { name: 'Priority', value: issue.priority === 1 ? 'Urgent' : 
                                      issue.priority === 2 ? 'High' : 
                                      issue.priority === 3 ? 'Medium' : 
-                                     issue.priority === 4 ? 'Low' : 'None', inline: true }
+                                     issue.priority === 4 ? 'Low' : '⚪ None', inline: true }
         )
         .setTimestamp()
         .setFooter({ text: 'LinearFlow Bot' });
@@ -173,11 +163,10 @@ module.exports = {
         });
       }
 
-      // Add decline reason if exists
+      // Add decline reason if exists (for archived/canceled tickets)
       if (declineReason) {
-        const reasonTitle = declinedFromTriage ? 'Decline Reason' : 'Comment';
         embed.addFields({
-          name: reasonTitle,
+          name: '❌ Decline Reason',
           value: declineReason,
           inline: false
         });
