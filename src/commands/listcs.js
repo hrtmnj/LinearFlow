@@ -4,7 +4,15 @@ const { LinearClient } = require('@linear/sdk');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('listcs')
-    .setDescription('List CS tickets in triage status'),
+    .setDescription('List CS tickets in triage status')
+    .addIntegerOption(option =>
+      option
+        .setName('amount')
+        .setDescription('Number of tickets to display (max 50)')
+        .setRequired(false)
+        .setMinValue(1)
+        .setMaxValue(50)
+    ),
 
   async execute(interaction) {
     // Defer reply since Linear API might take a moment
@@ -17,12 +25,25 @@ module.exports = {
 
       const teamId = process.env.LINEAR_TEAM_GATEWAY;
       const csLabelId = process.env.LINEAR_LABEL_CS;
+      const requestedAmount = interaction.options.getInteger('amount') || 50; // Default to 50 if not specified
 
       // Check if required env vars are set
       if (!teamId || !csLabelId) {
         await interaction.editReply({
           content: 'CS label or Gateway team not configured. Please contact an admin.',
         });
+        return;
+      }
+
+      // Validate amount (extra safety check even though Discord validates min/max)
+      if (requestedAmount > 50) {
+        const errorEmbed = new EmbedBuilder()
+          .setColor(0xFF0000)
+          .setTitle('Error')
+          .setDescription('You cannot request more than 50 tickets. Please use a number between 1 and 50.')
+          .setTimestamp();
+
+        await interaction.editReply({ embeds: [errorEmbed] });
         return;
       }
 
@@ -50,7 +71,7 @@ module.exports = {
           labels: { some: { id: { eq: csLabelId } } }
         },
         orderBy: 'createdAt',
-        first: 50
+        first: requestedAmount
       });
 
       const csIssues = issues.nodes;
@@ -67,7 +88,35 @@ module.exports = {
         return;
       }
 
-      // Pagination setup
+      // Determine if pagination is needed (more than 10 items)
+      const needsPagination = csIssues.length > 10;
+
+      if (!needsPagination) {
+        // Simple embed without pagination
+        const embed = new EmbedBuilder()
+          .setColor(0x5E6AD2)
+          .setTitle(`CS Tickets in Triage (${csIssues.length} total)`)
+          .setTimestamp()
+          .setFooter({ text: 'LinearFlow Bot' });
+
+        csIssues.forEach((issue, index) => {
+          const identifier = issue.identifier || '';
+          const title = issue.title.length > 50 
+            ? issue.title.substring(0, 47) + '...' 
+            : issue.title;
+
+          embed.addFields({
+            name: `${index + 1}. ${identifier} - ${title}`,
+            value: `[View Issue](${issue.url})`,
+            inline: false
+          });
+        });
+
+        await interaction.editReply({ embeds: [embed] });
+        return;
+      }
+
+      // Pagination setup for 10+ items
       const itemsPerPage = 10;
       const totalPages = Math.ceil(csIssues.length / itemsPerPage);
       let currentPage = 0;
@@ -135,11 +184,8 @@ module.exports = {
 
       const message = await interaction.editReply({
         embeds: [embed],
-        components: totalPages > 1 ? [buttons] : []
+        components: [buttons]
       });
-
-      // If only one page, we're done
-      if (totalPages <= 1) return;
 
       // Create collector for button interactions
       const collector = message.createMessageComponentCollector({
