@@ -46,31 +46,31 @@ module.exports = {
       console.log('CS Label ID:', csLabelId);
       console.log('Triage State ID:', triageState.id);
 
-      // Query issues - try with different filter approaches
+      // Query ALL issues in triage for this team
       const issues = await linearClient.issues({
         filter: {
           team: { id: { eq: teamId } },
-          state: { id: { eq: triageState.id } },
-          labels: { some: { id: { eq: csLabelId } } } // Changed from 'id' to 'some'
+          state: { id: { eq: triageState.id } }
         },
         orderBy: 'createdAt',
-        first: 50
+        first: 100
       });
 
-      const issueNodes = issues.nodes;
+      console.log('Total issues in triage:', issues.nodes.length);
 
-      console.log('Found issues:', issueNodes.length);
-      
-      // Debug: log first few issues
-      if (issueNodes.length > 0) {
-        console.log('Sample issue:', {
-          id: issueNodes[0].id,
-          title: issueNodes[0].title,
-          labels: issueNodes[0].labels
-        });
+      // Filter by CS label manually
+      const csIssues = [];
+      for (const issue of issues.nodes) {
+        const labels = await issue.labels();
+        const hasCSLabel = labels.nodes.some(label => label.id === csLabelId);
+        if (hasCSLabel) {
+          csIssues.push(issue);
+        }
       }
 
-      if (issueNodes.length === 0) {
+      console.log('CS issues found:', csIssues.length);
+
+      if (csIssues.length === 0) {
         const embed = new EmbedBuilder()
           .setColor(0x5E6AD2)
           .setTitle('CS Tickets in Triage')
@@ -85,12 +85,12 @@ module.exports = {
       // Build embed with issue list
       const embed = new EmbedBuilder()
         .setColor(0x5E6AD2)
-        .setTitle(`CS Tickets in Triage (${issueNodes.length})`)
+        .setTitle(`CS Tickets in Triage (${csIssues.length})`)
         .setTimestamp()
         .setFooter({ text: 'LinearFlow Bot' });
 
       // Add issues as fields (Discord has a limit of 25 fields)
-      const fieldsToAdd = issueNodes.slice(0, 25);
+      const fieldsToAdd = csIssues.slice(0, 25);
       
       for (const issue of fieldsToAdd) {
         // Extract identifier from URL
@@ -115,8 +115,8 @@ module.exports = {
         });
       }
 
-      if (issueNodes.length > 25) {
-        embed.setDescription(`Showing 25 of ${issueNodes.length} tickets`);
+      if (csIssues.length > 25) {
+        embed.setDescription(`Showing 25 of ${csIssues.length} tickets`);
       }
 
       await interaction.editReply({ embeds: [embed] });
