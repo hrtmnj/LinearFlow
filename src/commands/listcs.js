@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const { LinearClient } = require('@linear/sdk');
 
 module.exports = {
@@ -42,45 +42,18 @@ module.exports = {
         return;
       }
 
-      console.log('Team ID:', teamId);
-      console.log('CS Label ID:', csLabelId);
-      console.log('Triage State ID:', triageState.id);
-
-      // Query ALL issues in triage for this team
+      // Query issues with CS label and Triage status
       const issues = await linearClient.issues({
         filter: {
           team: { id: { eq: teamId } },
-          state: { id: { eq: triageState.id } }
+          state: { id: { eq: triageState.id } },
+          labels: { some: { id: { eq: csLabelId } } }
         },
         orderBy: 'createdAt',
-        first: 100
+        first: 50
       });
 
-      console.log('Total issues in triage:', issues.nodes.length);
-
-      // DEBUG: Check labels on first few issues
-      if (issues.nodes.length > 0) {
-        console.log('\n--- DEBUG: Checking labels on first 3 issues ---');
-        for (let i = 0; i < Math.min(3, issues.nodes.length); i++) {
-          const issue = issues.nodes[i];
-          const labels = await issue.labels();
-          console.log(`Issue ${issue.identifier}:`);
-          console.log('  Labels:', labels.nodes.map(l => `${l.name} (${l.id})`));
-        }
-        console.log('--- END DEBUG ---\n');
-      }
-
-      // Filter by CS label manually
-      const csIssues = [];
-      for (const issue of issues.nodes) {
-        const labels = await issue.labels();
-        const hasCSLabel = labels.nodes.some(label => label.id === csLabelId);
-        if (hasCSLabel) {
-          csIssues.push(issue);
-        }
-      }
-
-      console.log('CS issues found:', csIssues.length);
+      const csIssues = issues.nodes;
 
       if (csIssues.length === 0) {
         const embed = new EmbedBuilder()
@@ -94,44 +67,126 @@ module.exports = {
         return;
       }
 
-      // Build embed with issue list
-      const embed = new EmbedBuilder()
-        .setColor(0x5E6AD2)
-        .setTitle(`CS Tickets in Triage (${csIssues.length})`)
-        .setTimestamp()
-        .setFooter({ text: 'LinearFlow Bot' });
+      // Pagination setup
+      const itemsPerPage = 10;
+      const totalPages = Math.ceil(csIssues.length / itemsPerPage);
+      let currentPage = 0;
 
-      // Add issues as fields (Discord has a limit of 25 fields)
-      const fieldsToAdd = csIssues.slice(0, 25);
-      
-      for (const issue of fieldsToAdd) {
-        // Extract identifier from URL
-        const identifier = issue.identifier || (issue.url ? issue.url.split('/issue/')[1]?.split('/')[0] : '');
-        
-        // Get priority emoji
-        let priorityEmoji = '⚪';
-        if (issue.priority === 1) priorityEmoji = '🔴'; // Urgent
-        else if (issue.priority === 2) priorityEmoji = '🟠'; // High
-        else if (issue.priority === 3) priorityEmoji = '🟡'; // Medium
-        else if (issue.priority === 4) priorityEmoji = '🔵'; // Low
+      // Function to generate embed for a specific page
+      const generateEmbed = (page) => {
+        const start = page * itemsPerPage;
+        const end = start + itemsPerPage;
+        const pageIssues = csIssues.slice(start, end);
 
-        // Truncate title if too long
-        const title = issue.title.length > 50 
-          ? issue.title.substring(0, 47) + '...' 
-          : issue.title;
+        const embed = new EmbedBuilder()
+          .setColor(0x5E6AD2)
+          .setTitle(`CS Tickets in Triage (${csIssues.length} total)`)
+          .setTimestamp()
+          .setFooter({ text: `LinearFlow Bot • Page ${page + 1} of ${totalPages}` });
 
-        embed.addFields({
-          name: `${priorityEmoji} ${identifier} - ${title}`,
-          value: `[View Issue](${issue.url})`,
-          inline: false
+        pageIssues.forEach((issue, index) => {
+          const identifier = issue.identifier || '';
+          const title = issue.title.length > 50 
+            ? issue.title.substring(0, 47) + '...' 
+            : issue.title;
+          const globalIndex = start + index + 1;
+
+          embed.addFields({
+            name: `${globalIndex}. ${identifier} - ${title}`,
+            value: `[View Issue](${issue.url})`,
+            inline: false
+          });
         });
-      }
 
-      if (csIssues.length > 25) {
-        embed.setDescription(`Showing 25 of ${csIssues.length} tickets`);
-      }
+        return embed;
+      };
 
-      await interaction.editReply({ embeds: [embed] });
+      // Function to generate buttons
+      const generateButtons = (page) => {
+        const row = new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId('first')
+              .setLabel('⏮️ First')
+              .setStyle(ButtonStyle.Primary)
+              .setDisabled(page === 0),
+            new ButtonBuilder()
+              .setCustomId('previous')
+              .setLabel('◀️ Previous')
+              .setStyle(ButtonStyle.Primary)
+              .setDisabled(page === 0),
+            new ButtonBuilder()
+              .setCustomId('next')
+              .setLabel('Next ▶️')
+              .setStyle(ButtonStyle.Primary)
+              .setDisabled(page === totalPages - 1),
+            new ButtonBuilder()
+              .setCustomId('last')
+              .setLabel('Last ⏭️')
+              .setStyle(ButtonStyle.Primary)
+              .setDisabled(page === totalPages - 1)
+          );
+        return row;
+      };
+
+      // Send initial message
+      const embed = generateEmbed(currentPage);
+      const buttons = generateButtons(currentPage);
+
+      const message = await interaction.editReply({
+        embeds: [embed],
+        components: totalPages > 1 ? [buttons] : []
+      });
+
+      // If only one page, we're done
+      if (totalPages <= 1) return;
+
+      // Create collector for button interactions
+      const collector = message.createMessageComponentCollector({
+        componentType: ComponentType.Button,
+        time: 300000 // 5 minutes
+      });
+
+      collector.on('collect', async (buttonInteraction) => {
+        // Check if the person clicking is the one who ran the command
+        if (buttonInteraction.user.id !== interaction.user.id) {
+          await buttonInteraction.reply({
+            content: 'These buttons are not for you!',
+            ephemeral: true
+          });
+          return;
+        }
+
+        // Update page based on button clicked
+        if (buttonInteraction.customId === 'first') {
+          currentPage = 0;
+        } else if (buttonInteraction.customId === 'previous') {
+          currentPage = Math.max(0, currentPage - 1);
+        } else if (buttonInteraction.customId === 'next') {
+          currentPage = Math.min(totalPages - 1, currentPage + 1);
+        } else if (buttonInteraction.customId === 'last') {
+          currentPage = totalPages - 1;
+        }
+
+        // Update the message
+        await buttonInteraction.update({
+          embeds: [generateEmbed(currentPage)],
+          components: [generateButtons(currentPage)]
+        });
+      });
+
+      collector.on('end', async () => {
+        // Disable buttons after timeout
+        try {
+          await message.edit({
+            embeds: [generateEmbed(currentPage)],
+            components: []
+          });
+        } catch (error) {
+          // Message might have been deleted
+          console.log('Could not disable buttons:', error.message);
+        }
+      });
 
     } catch (error) {
       console.error('Error listing CS tickets:', error);
