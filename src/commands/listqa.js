@@ -63,20 +63,20 @@ module.exports = {
         return;
       }
 
-      // Query issues with CS label and Triage status
+      // Query issues with QA label and Triage status
       const issues = await linearClient.issues({
         filter: {
           team: { id: { eq: teamId } },
           state: { id: { eq: triageState.id } },
-          labels: { some: { id: { eq: csLabelId } } }
+          labels: { some: { id: { eq: qaLabelId } } }
         },
         orderBy: 'createdAt',
         first: requestedAmount
       });
 
-      const csIssues = issues.nodes;
+      const qaIssues = issues.nodes;
 
-      if (csIssues.length === 0) {
+      if (qaIssues.length === 0) {
         const embed = new EmbedBuilder()
           .setColor(0x5E6AD2)
           .setTitle('QA Tickets in Triage')
@@ -89,17 +89,17 @@ module.exports = {
       }
 
       // Determine if pagination is needed (more than 10 items)
-      const needsPagination = csIssues.length > 10;
+      const needsPagination = qaIssues.length > 10;
 
       if (!needsPagination) {
         // Simple embed without pagination
         const embed = new EmbedBuilder()
           .setColor(0x5E6AD2)
-          .setTitle(`QA Tickets in Triage (${csIssues.length} total)`)
+          .setTitle(`QA Tickets in Triage (${qaIssues.length} total)`)
           .setTimestamp()
           .setFooter({ text: 'LinearFlow Bot' });
 
-        csIssues.forEach((issue, index) => {
+        qaIssues.forEach((issue, index) => {
           const identifier = issue.identifier || '';
           const title = issue.title.length > 50 
             ? issue.title.substring(0, 47) + '...' 
@@ -118,18 +118,18 @@ module.exports = {
 
       // Pagination setup for 10+ items
       const itemsPerPage = 10;
-      const totalPages = Math.ceil(csIssues.length / itemsPerPage);
+      const totalPages = Math.ceil(qaIssues.length / itemsPerPage);
       let currentPage = 0;
 
       // Function to generate embed for a specific page
       const generateEmbed = (page) => {
         const start = page * itemsPerPage;
         const end = start + itemsPerPage;
-        const pageIssues = csIssues.slice(start, end);
+        const pageIssues = qaIssues.slice(start, end);
 
         const embed = new EmbedBuilder()
           .setColor(0x5E6AD2)
-          .setTitle(`QA Tickets in Triage (${csIssues.length} total)`)
+          .setTitle(`QA Tickets in Triage (${qaIssues.length} total)`)
           .setTimestamp()
           .setFooter({ text: `LinearFlow Bot • Page ${page + 1} of ${totalPages}` });
 
@@ -235,7 +235,7 @@ module.exports = {
       });
 
     } catch (error) {
-      console.error('Error listing CS tickets:', error);
+      console.error('Error listing QA tickets:', error);
       
       // Error embed
       const errorEmbed = new EmbedBuilder()
