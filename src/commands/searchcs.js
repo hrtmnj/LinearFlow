@@ -89,16 +89,33 @@ module.exports = {
         }
       }
 
-      // Check if archived/canceled and get reason from comments
-      let archiveReason = null;
-      if (stateName.toLowerCase() === 'canceled' || stateName.toLowerCase() === 'archived') {
+      // Get issue history to check if it was declined from triage
+      const history = await issue.history();
+      let declinedFromTriage = false;
+      
+      // Check if issue was moved from Triage to Canceled/Archived
+      for (const historyItem of history.nodes) {
+        if (historyItem.fromState?.name?.toLowerCase() === 'triage' && 
+            (historyItem.toState?.name?.toLowerCase() === 'canceled' || 
+             historyItem.toState?.name?.toLowerCase() === 'archived')) {
+          declinedFromTriage = true;
+          break;
+        }
+      }
+
+      // Get comments and find decline reason
+      let declineReason = null;
+      if (declinedFromTriage || stateName.toLowerCase() === 'canceled' || stateName.toLowerCase() === 'archived') {
         const comments = await issue.comments();
-        // Look for a comment that might explain why it was archived
-        const recentComment = comments.nodes[0];
-        if (recentComment) {
-          archiveReason = recentComment.body;
-          if (archiveReason.length > 150) {
-            archiveReason = archiveReason.substring(0, 147) + '...';
+        
+        if (comments.nodes.length > 0) {
+          // Get the most recent comment (likely the decline reason)
+          const recentComment = comments.nodes[0];
+          declineReason = recentComment.body;
+          
+          // Cap at 200 characters
+          if (declineReason.length > 200) {
+            declineReason = declineReason.substring(0, 197) + '...';
           }
         }
       }
@@ -130,7 +147,7 @@ module.exports = {
           { name: 'Priority', value: issue.priority === 1 ? 'Urgent' : 
                                      issue.priority === 2 ? 'High' : 
                                      issue.priority === 3 ? 'Medium' : 
-                                     issue.priority === 4 ? 'Low' : '⚪ None', inline: true }
+                                     issue.priority === 4 ? 'Low' : 'None', inline: true }
         )
         .setTimestamp()
         .setFooter({ text: 'LinearFlow Bot' });
@@ -156,11 +173,12 @@ module.exports = {
         });
       }
 
-      // Add archive/cancel reason if exists
-      if (archiveReason) {
+      // Add decline reason if exists
+      if (declineReason) {
+        const reasonTitle = declinedFromTriage ? 'Decline Reason' : 'Comment';
         embed.addFields({
-          name: '📝 Reason',
-          value: archiveReason,
+          name: reasonTitle,
+          value: declineReason,
           inline: false
         });
       }
