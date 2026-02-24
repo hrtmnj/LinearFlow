@@ -58,6 +58,18 @@ module.exports = {
 
       console.log('Total issues in triage:', issues.nodes.length);
 
+      // DEBUG: Check labels on first few issues
+      if (issues.nodes.length > 0) {
+        console.log('\n--- DEBUG: Checking labels on first 3 issues ---');
+        for (let i = 0; i < Math.min(3, issues.nodes.length); i++) {
+          const issue = issues.nodes[i];
+          const labels = await issue.labels();
+          console.log(`Issue ${issue.identifier}:`);
+          console.log('  Labels:', labels.nodes.map(l => `${l.name} (${l.id})`));
+        }
+        console.log('--- END DEBUG ---\n');
+      }
+
       // Filter by CS label manually
       const csIssues = [];
       for (const issue of issues.nodes) {
