@@ -42,18 +42,33 @@ module.exports = {
         return;
       }
 
-      // Query issues with CS label and Triage status
+      console.log('Team ID:', teamId);
+      console.log('CS Label ID:', csLabelId);
+      console.log('Triage State ID:', triageState.id);
+
+      // Query issues - try with different filter approaches
       const issues = await linearClient.issues({
         filter: {
           team: { id: { eq: teamId } },
-          labels: { id: { eq: csLabelId } },
-          state: { id: { eq: triageState.id } }
+          state: { id: { eq: triageState.id } },
+          labels: { some: { id: { eq: csLabelId } } } // Changed from 'id' to 'some'
         },
         orderBy: 'createdAt',
-        first: 25 // Limit to 25 most recent issues
+        first: 50
       });
 
       const issueNodes = issues.nodes;
+
+      console.log('Found issues:', issueNodes.length);
+      
+      // Debug: log first few issues
+      if (issueNodes.length > 0) {
+        console.log('Sample issue:', {
+          id: issueNodes[0].id,
+          title: issueNodes[0].title,
+          labels: issueNodes[0].labels
+        });
+      }
 
       if (issueNodes.length === 0) {
         const embed = new EmbedBuilder()
@@ -79,7 +94,7 @@ module.exports = {
       
       for (const issue of fieldsToAdd) {
         // Extract identifier from URL
-        const identifier = issue.url ? issue.url.split('/issue/')[1]?.split('/')[0] : issue.identifier;
+        const identifier = issue.identifier || (issue.url ? issue.url.split('/issue/')[1]?.split('/')[0] : '');
         
         // Get priority emoji
         let priorityEmoji = '⚪';
@@ -113,7 +128,7 @@ module.exports = {
       const errorEmbed = new EmbedBuilder()
         .setColor(0xFF0000)
         .setTitle('Error')
-        .setDescription('Failed to list CS tickets. Please try again later.')
+        .setDescription(`Failed to list CS tickets: ${error.message}`)
         .setTimestamp();
 
       await interaction.editReply({ embeds: [errorEmbed] });
