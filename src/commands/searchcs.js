@@ -22,15 +22,6 @@ module.exports = {
       });
 
       const ticketId = interaction.options.getString('ticket_id').trim().toUpperCase();
-      const csLabelId = process.env.LINEAR_LABEL_CS;
-
-      // Check if CS label is configured
-      if (!csLabelId) {
-        await interaction.editReply({
-          content: 'CS label not configured. Please contact an admin.',
-        });
-        return;
-      }
 
       // Use the issue() method with the identifier directly
       let issue;
@@ -47,15 +38,23 @@ module.exports = {
         return;
       }
 
-      // Check if issue has CS label
+      // Get the current identifier (in case it was moved)
+      const currentIdentifier = issue.identifier;
+      const wasMoved = currentIdentifier !== ticketId;
+
+      // Check if issue has CS label by NAME instead of ID
       const labels = await issue.labels();
-      const hasCSLabel = labels.nodes.some(label => label.id === csLabelId);
+      const hasCSLabel = labels.nodes.some(label => label.name.toUpperCase() === 'CS');
 
       if (!hasCSLabel) {
         const errorEmbed = new EmbedBuilder()
           .setColor(0xFF0000)
           .setTitle('Access Denied')
-          .setDescription(`Ticket **${ticketId}** does not have the CS label. You can only search CS tickets.`)
+          .setDescription(
+            wasMoved 
+              ? `Ticket **${ticketId}** has been moved to **${currentIdentifier}** and no longer has the CS label. You can only search CS tickets.`
+              : `Ticket **${ticketId}** does not have the CS label. You can only search CS tickets.`
+          )
           .setTimestamp();
 
         await interaction.editReply({ embeds: [errorEmbed] });
@@ -121,17 +120,22 @@ module.exports = {
                  stateName.toLowerCase() === 'canceled' ? 0xFF0000 : 
                  stateName.toLowerCase() === 'in progress' ? 0xFFFF00 : 
                  0x5E6AD2)
-        .setTitle(`${issue.identifier} - ${issue.title}`)
+        .setTitle(`${currentIdentifier} - ${issue.title}`)
         .setURL(issue.url)
         .addFields(
           { name: 'Status', value: stateName, inline: true },
           { name: 'Priority', value: issue.priority === 1 ? 'Urgent' : 
                                      issue.priority === 2 ? 'High' : 
                                      issue.priority === 3 ? 'Medium' : 
-                                     issue.priority === 4 ? 'Low' : 'None', inline: true }
+                                     issue.priority === 4 ? 'Low' : '⚪ None', inline: true }
         )
         .setTimestamp()
         .setFooter({ text: 'LinearFlow Bot' });
+
+      // Add note if ticket was moved
+      if (wasMoved) {
+        embed.setDescription(`*Note: This ticket was originally **${ticketId}** but has been moved to a different team.*`);
+      }
 
       // Add user description
       embed.addFields({
