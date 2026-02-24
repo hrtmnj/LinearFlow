@@ -94,16 +94,10 @@ module.exports = {
       if (stateName.toLowerCase() === 'canceled' || stateName.toLowerCase() === 'archive') {
         const comments = await issue.comments();
         
-        console.log('Total comments:', comments.nodes.length);
-        
         if (comments.nodes.length > 0) {
-          // Comments are ordered by creation date descending (newest first)
-          // Get the last comment (oldest, which is likely the decline reason)
-          const lastComment = comments.nodes[comments.nodes.length - 1];
-          
-          console.log('Last comment:', lastComment.body);
-          
-          declineReason = lastComment.body;
+          // Get the most recent comment (index 0)
+          const recentComment = comments.nodes[0];
+          declineReason = recentComment.body;
           
           // Cap at 200 characters
           if (declineReason.length > 200) {
@@ -143,7 +137,7 @@ module.exports = {
           { name: 'Priority', value: issue.priority === 1 ? 'Urgent' : 
                                      issue.priority === 2 ? 'High' : 
                                      issue.priority === 3 ? 'Medium' : 
-                                     issue.priority === 4 ? 'Low' : '⚪ None', inline: true }
+                                     issue.priority === 4 ? 'Low' : 'None', inline: true }
         )
         .setTimestamp()
         .setFooter({ text: 'LinearFlow Bot' });
