@@ -32,14 +32,11 @@ module.exports = {
         return;
       }
 
-      // Search for the issue by identifier
-      const issues = await linearClient.issues({
-        filter: {
-          identifier: { eq: ticketId }
-        }
-      });
-
-      if (issues.nodes.length === 0) {
+      // Use the issue() method with the identifier directly
+      let issue;
+      try {
+        issue = await linearClient.issue(ticketId);
+      } catch (error) {
         const errorEmbed = new EmbedBuilder()
           .setColor(0xFF0000)
           .setTitle('Ticket Not Found')
@@ -49,8 +46,6 @@ module.exports = {
         await interaction.editReply({ embeds: [errorEmbed] });
         return;
       }
-
-      const issue = issues.nodes[0];
 
       // Check if issue has CS label
       const labels = await issue.labels();
