@@ -92,7 +92,6 @@ function buildDetailsModal(source, type) {
   const descHints = {
     bug:     'Steps to reproduce, expected vs actual behaviour, any error messages',
     feature: "Problem you're trying to solve and your proposed solution",
-    general: 'Describe your question or what you need help with',
     outage:  'What is affected, when it started, how many users impacted',
   };
 
@@ -154,9 +153,7 @@ function buildDetailsModal(source, type) {
 }
 
 // ─── Lookup Maps ──────────────────────────────────────────────────────────────
-const typeEmoji     = { bug: '🐛', feature: '✨', general: '💬', outage: '🚨' };
-const platformEmoji = { desktop: '🖥️', console: '🎮', ios: '📱', android: '🤖' };
-const sourceEmoji   = { QA: '🔬', CS: '🎧' };
+const typeEmoji     = { bug: '🐛', feature: '✨', outage: '🚨' };
 const sourceLabel   = { QA: 'Quality Assurance', CS: 'Community Support' };
 const embedColor    = { bug: 0xe74c3c, feature: 0x5E6AD2, general: 0x2ecc71, outage: 0xe67e22 };
 
@@ -236,11 +233,11 @@ async function handleModalSubmit(interaction) {
         .setTitle(`${typeEmoji[type]}  ${title}`)
         .setDescription(identifier ? `**${identifier}** — ${title}` : title)
         .addFields(
-          { name: 'Source',      value: `${sourceEmoji[source]}  ${sourceLabel[source] ?? source}`, inline: true },
-          { name: 'Type',        value: `${typeEmoji[type]}  ${capitalize(type)}`,                  inline: true },
-          { name: 'Platform',    value: `${platformEmoji[platform]}  ${capitalize(platform)}`,      inline: true },
-          { name: 'Reported by', value: interaction.user.tag,                                       inline: true },
-          { name: 'Status',      value: 'Triage',                                                   inline: true },
+          { name: 'Source',      value: `${sourceLabel[source] ?? source}`, inline: true },
+          { name: 'Type',        value: `${capitalize(type)}`, inline: true },
+          { name: 'Platform',    value: `${capitalize(platform)}`, inline: true },
+          { name: 'Reported by', value: interaction.user.tag, inline: true },
+          { name: 'Status',      value: 'Triage', inline: true },
           { name: 'Description', value: description },
         )
         .setURL(createdIssue.url)
@@ -291,7 +288,7 @@ module.exports = {
   // Slash command → send ephemeral triage selects with interleaved text blurbs
   async execute(interaction) {
     const sourceText = new TextDisplayBuilder()
-      .setContent('**Source** — Who is submitting this report?\n');
+      .setContent('Creating a new ticket\nMake sure you have any media content for your ticket ready\n\n**Source** — Which team is submitting this report?\n');
 
     const sourceRow = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
@@ -314,7 +311,7 @@ module.exports = {
       .setSpacing(SeparatorSpacingSize.Small);
 
     const typeText = new TextDisplayBuilder()
-      .setContent('**Ticket Type** — What kind of report is this?\n-# Bug Report for broken functionality, Feature Request for improvements, General Inquiry for questions, Performance / Outage for service degradation.');
+      .setContent('**Ticket Type** — What kind of report is this?\n');
 
     const typeRow = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
