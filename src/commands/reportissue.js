@@ -7,7 +7,6 @@ const {
   FileUploadBuilder,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
-  ActionRowBuilder,
   EmbedBuilder,
 } = require('discord.js');
 const { LinearClient } = require('@linear/sdk');
@@ -63,24 +62,29 @@ async function uploadFileToLinear(linearClient, file) {
   }
 }
 
-// ─── Triage State ─────────────────────────────────────────────────────────────
-// Keyed by userId. Tracks select menu picks until all 4 are chosen.
-// In-memory is fine — if the bot restarts mid-triage the user just runs /reportissue again.
-const userTriage = new Map();
+// ─── Lookup Maps ──────────────────────────────────────────────────────────────
+const linearPriority = { critical: 1, high: 2, medium: 3, low: 4 };
+const priorityEmoji  = { critical: '🔴', high: '🟠', medium: '🟡', low: '🟢' };
+const typeEmoji      = { bug: '🐛', feature: '✨', general: '💬', outage: '🚨' };
+const platformEmoji  = { desktop: '🖥️', console: '🎮', ios: '📱', android: '🤖' };
+const sourceEmoji    = { QA: '🔬', CS: '🎧' };
+const sourceLabel    = { QA: 'Quality Assurance', CS: 'Community Support' };
+const embedColor     = { critical: 0xe74c3c, high: 0xe67e22, medium: 0xf1c40f, low: 0x2ecc71 };
 
-// Prune sessions abandoned for more than 10 minutes to prevent memory leak
-setInterval(() => {
-  const cutoff = Date.now() - 10 * 60 * 1000;
-  for (const [userId, triage] of userTriage) {
-    if (triage.startedAt < cutoff) userTriage.delete(userId);
-  }
-}, 5 * 60 * 1000);
+function capitalize(str) {
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
 
-// ─── Triage Select Menus ──────────────────────────────────────────────────────
-function buildTriageComponents() {
+// ─── Modal 1: Source + Ticket Type ───────────────────────────────────────────
+function buildModal1() {
+  const modal = new ModalBuilder()
+    .setCustomId('report_step1')
+    .setTitle('Create New Report');
+
   const sourceSelect = new StringSelectMenuBuilder()
-    .setCustomId('triage_source')
-    .setPlaceholder('Source')
+    .setCustomId('report_source')
+    .setPlaceholder('Select a source...')
+    .setRequired(true)
     .addOptions(
       new StringSelectMenuOptionBuilder()
         .setLabel('Quality Assurance')
@@ -93,8 +97,9 @@ function buildTriageComponents() {
     );
 
   const typeSelect = new StringSelectMenuBuilder()
-    .setCustomId('triage_type')
-    .setPlaceholder('Ticket Type')
+    .setCustomId('report_type')
+    .setPlaceholder('Select a ticket type...')
+    .setRequired(true)
     .addOptions(
       new StringSelectMenuOptionBuilder()
         .setLabel('Bug Report')
@@ -114,9 +119,36 @@ function buildTriageComponents() {
         .setValue('outage'),
     );
 
+  const sourceLabel = new LabelBuilder()
+    .setLabel('Source')
+    .setStringSelectMenuComponent(sourceSelect);
+
+  const typeLabel = new LabelBuilder()
+    .setLabel('Ticket Type')
+    .setStringSelectMenuComponent(typeSelect);
+
+  modal.addLabelComponents(sourceLabel, typeLabel);
+  return modal;
+}
+
+// ─── Modal 2: Priority + Platform + Title + Description + Attachments ─────────
+// Source and type are encoded into the customId so they survive between modals.
+function buildModal2(source, type) {
+  const descHints = {
+    bug:     'Steps to reproduce, expected vs actual behaviour, any error messages',
+    feature: "Problem you're trying to solve and your proposed solution",
+    general: 'Describe your question or what you need help with',
+    outage:  'What is affected, when it started, how many users impacted',
+  };
+
+  const modal = new ModalBuilder()
+    .setCustomId(`report_step2::${source}::${type}`)
+    .setTitle('Create New Report');
+
   const prioritySelect = new StringSelectMenuBuilder()
-    .setCustomId('triage_priority')
-    .setPlaceholder('Priority')
+    .setCustomId('report_priority')
+    .setPlaceholder('Select a priority...')
+    .setRequired(true)
     .addOptions(
       new StringSelectMenuOptionBuilder()
         .setLabel('Critical')
@@ -137,8 +169,9 @@ function buildTriageComponents() {
     );
 
   const platformSelect = new StringSelectMenuBuilder()
-    .setCustomId('triage_platform')
-    .setPlaceholder('Platform')
+    .setCustomId('report_platform')
+    .setPlaceholder('Select a platform...')
+    .setRequired(true)
     .addOptions(
       new StringSelectMenuOptionBuilder().setLabel('Desktop').setValue('desktop'),
       new StringSelectMenuOptionBuilder().setLabel('Console').setValue('console'),
@@ -146,93 +179,71 @@ function buildTriageComponents() {
       new StringSelectMenuOptionBuilder().setLabel('Mobile - Android').setValue('android'),
     );
 
-  return [
-    new ActionRowBuilder().addComponents(sourceSelect),
-    new ActionRowBuilder().addComponents(typeSelect),
-    new ActionRowBuilder().addComponents(prioritySelect),
-    new ActionRowBuilder().addComponents(platformSelect),
-  ];
-}
-
-// ─── Details Modal ────────────────────────────────────────────────────────────
-function buildDetailsModal(source, type, priority, platform) {
-  const titles = {
-    bug:     'Bug Report — Details',
-    feature: 'Feature Request — Details',
-    general: 'General — Details',
-    outage:  'Performance / Outage — Details',
-  };
-
-  const descHints = {
-    bug:     'Steps to reproduce, expected vs actual behaviour, any error messages',
-    feature: "Problem you're trying to solve and your proposed solution",
-    general: 'Describe your question or what you need help with',
-    outage:  'What is affected, when it started, how many users impacted',
-  };
-
-  const modal = new ModalBuilder()
-    .setCustomId(`ticket_details::${source}::${type}::${priority}::${platform}`)
-    .setTitle(titles[type] ?? 'Ticket Details');
-
   const titleInput = new TextInputBuilder()
-    .setCustomId('ticket_title')
+    .setCustomId('report_title')
     .setStyle(TextInputStyle.Short)
     .setPlaceholder('Brief summary of the issue or request')
     .setMaxLength(100)
     .setRequired(true);
 
-  const titleLabel = new LabelBuilder()
-    .setLabel('Title')
-    .setTextInputComponent(titleInput);
-
   const descInput = new TextInputBuilder()
-    .setCustomId('ticket_description')
+    .setCustomId('report_description')
     .setStyle(TextInputStyle.Paragraph)
     .setPlaceholder(descHints[type] ?? 'Provide as much detail as possible...')
     .setMaxLength(2000)
     .setRequired(true);
+
+  const fileUpload = new FileUploadBuilder()
+    .setCustomId('report_attachments')
+    .setMinValues(0)
+    .setMaxValues(3)
+    .setRequired(false);
+
+  const priorityLabel = new LabelBuilder()
+    .setLabel('Priority')
+    .setStringSelectMenuComponent(prioritySelect);
+
+  const platformLabel = new LabelBuilder()
+    .setLabel('Platform')
+    .setStringSelectMenuComponent(platformSelect);
+
+  const titleLabel = new LabelBuilder()
+    .setLabel('Title')
+    .setTextInputComponent(titleInput);
 
   const descLabel = new LabelBuilder()
     .setLabel('Description')
     .setDescription(descHints[type])
     .setTextInputComponent(descInput);
 
-  const fileUpload = new FileUploadBuilder()
-    .setCustomId('ticket_attachments')
-    .setMinValues(0)
-    .setMaxValues(3)
-    .setRequired(false);
-
   const fileLabel = new LabelBuilder()
     .setLabel('Attachments')
     .setDescription('Screenshots or videos (optional, max 3)')
     .setFileUploadComponent(fileUpload);
 
-  modal.addLabelComponents(titleLabel, descLabel, fileLabel);
+  modal.addLabelComponents(priorityLabel, platformLabel, titleLabel, descLabel, fileLabel);
   return modal;
 }
 
-// ─── Lookup Maps ──────────────────────────────────────────────────────────────
-const linearPriority = { critical: 1, high: 2, medium: 3, low: 4 };
-const priorityEmoji  = { critical: '🔴', high: '🟠', medium: '🟡', low: '🟢' };
-const typeEmoji      = { bug: '🐛', feature: '✨', general: '💬', outage: '🚨' };
-const platformEmoji  = { desktop: '🖥️', console: '🎮', ios: '📱', android: '🤖' };
-const sourceEmoji    = { QA: '🔬', CS: '🎧' };
-const sourceLabel    = { QA: 'Quality Assurance', CS: 'Community Support' };
-const embedColor     = { critical: 0xe74c3c, high: 0xe67e22, medium: 0xf1c40f, low: 0x2ecc71 };
+// ─── Handle Step 1 Submission → show Modal 2 ─────────────────────────────────
+async function handleStep1(interaction) {
+  const source = interaction.fields.getStringSelectValues('report_source')[0];
+  const type   = interaction.fields.getStringSelectValues('report_type')[0];
 
-function capitalize(str) {
-  return str.charAt(0).toUpperCase() + str.slice(1);
+  // Respond immediately with Modal 2 — no defer allowed before showModal
+  await interaction.showModal(buildModal2(source, type));
 }
 
-// ─── Handle Modal Submission ──────────────────────────────────────────────────
-async function handleModalSubmit(interaction) {
+// ─── Handle Step 2 Submission → create Linear issue ──────────────────────────
+async function handleStep2(interaction) {
   await interaction.deferReply();
 
-  const [, source, type, priority, platform] = interaction.customId.split('::');
-  const title       = interaction.fields.getTextInputValue('ticket_title');
-  const description = interaction.fields.getTextInputValue('ticket_description');
-  const uploadedFiles = interaction.fields.getUploadedFiles('ticket_attachments') ?? [];
+  const [, source, type] = interaction.customId.split('::');
+  const priority      = interaction.fields.getStringSelectValues('report_priority')[0];
+  const platform      = interaction.fields.getStringSelectValues('report_platform')[0];
+  const title         = interaction.fields.getTextInputValue('report_title');
+  const description   = interaction.fields.getTextInputValue('report_description');
+  const uploadedFiles = interaction.fields.getUploadedFiles('report_attachments') ?? [];
 
   try {
     const linearClient = new LinearClient({ apiKey: process.env.LINEAR_API_KEY });
@@ -351,45 +362,23 @@ module.exports = {
     .setName('reportissue')
     .setDescription('Report an issue through our gateway triage'),
 
-  // Called by index.js for slash command interactions
+  // Slash command → immediately show Modal 1
   async execute(interaction) {
-    await interaction.reply({
-      content: '### Create New Report\nMake your selections below — the details form will open once all four are chosen.',
-      components: buildTriageComponents(),
-      ephemeral: true,
-    });
-    userTriage.set(interaction.user.id, {
-      source: null, type: null, priority: null, platform: null,
-      startedAt: Date.now(),
-    });
+    await interaction.showModal(buildModal1());
   },
 
-  // Called by index.js for select menu and modal interactions belonging to this command
+  // Modal submissions routed here from index.js
   async handleInteraction(interaction) {
-    // Select menu picks — accumulate until all 4 chosen, then fire modal
-    if (interaction.isStringSelectMenu()) {
-      const triage = userTriage.get(interaction.user.id) ?? {};
+    if (!interaction.isModalSubmit()) return;
 
-      if (interaction.customId === 'triage_source')   triage.source   = interaction.values[0];
-      if (interaction.customId === 'triage_type')     triage.type     = interaction.values[0];
-      if (interaction.customId === 'triage_priority') triage.priority = interaction.values[0];
-      if (interaction.customId === 'triage_platform') triage.platform = interaction.values[0];
-
-      userTriage.set(interaction.user.id, triage);
-
-      if (triage.source && triage.type && triage.priority && triage.platform) {
-        const modal = buildDetailsModal(triage.source, triage.type, triage.priority, triage.platform);
-        await interaction.showModal(modal);
-        userTriage.delete(interaction.user.id);
-      } else {
-        await interaction.deferUpdate();
-      }
+    if (interaction.customId === 'report_step1') {
+      await handleStep1(interaction);
       return;
     }
 
-    // Modal submission
-    if (interaction.isModalSubmit()) {
-      await handleModalSubmit(interaction);
+    if (interaction.customId.startsWith('report_step2::')) {
+      await handleStep2(interaction);
+      return;
     }
   },
 };

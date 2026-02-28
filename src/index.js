@@ -27,7 +27,7 @@ for (const file of commandFiles) {
 // ─── Interaction Handler ──────────────────────────────────────────────────────
 client.on('interactionCreate', async interaction => {
 
-  // Slash commands — route to command.execute()
+  // Slash commands
   if (interaction.isChatInputCommand()) {
     const command = client.commands.get(interaction.commandName);
     if (!command) {
@@ -46,19 +46,9 @@ client.on('interactionCreate', async interaction => {
     return;
   }
 
-  // Select menus — route to the owning command's handleInteraction()
-  // customId format: 'triage_source', 'triage_type', etc. — prefix maps to reportissue
-  if (interaction.isStringSelectMenu()) {
-    if (interaction.customId.startsWith('triage_')) {
-      const command = client.commands.get('reportissue');
-      if (command?.handleInteraction) await command.handleInteraction(interaction);
-    }
-    return;
-  }
-
-  // Modal submissions — route based on customId prefix
+  // Modal submissions — route to the owning command via customId prefix
   if (interaction.isModalSubmit()) {
-    if (interaction.customId.startsWith('ticket_details::')) {
+    if (interaction.customId === 'report_step1' || interaction.customId.startsWith('report_step2::')) {
       const command = client.commands.get('reportissue');
       if (command?.handleInteraction) await command.handleInteraction(interaction);
     }
