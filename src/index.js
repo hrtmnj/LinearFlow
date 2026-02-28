@@ -46,9 +46,18 @@ client.on('interactionCreate', async interaction => {
     return;
   }
 
-  // Modal submissions — route to the owning command via customId prefix
+  // Select menus — triage_ prefix belongs to reportissue
+  if (interaction.isStringSelectMenu()) {
+    if (interaction.customId.startsWith('triage_')) {
+      const command = client.commands.get('reportissue');
+      if (command?.handleInteraction) await command.handleInteraction(interaction);
+    }
+    return;
+  }
+
+  // Modal submissions — ticket_details:: prefix belongs to reportissue
   if (interaction.isModalSubmit()) {
-    if (interaction.customId === 'report_step1' || interaction.customId.startsWith('report_step2::')) {
+    if (interaction.customId.startsWith('ticket_details::')) {
       const command = client.commands.get('reportissue');
       if (command?.handleInteraction) await command.handleInteraction(interaction);
     }
