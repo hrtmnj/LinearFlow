@@ -8,6 +8,10 @@ const {
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
   ActionRowBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
+  MessageFlags,
   EmbedBuilder,
 } = require('discord.js');
 const { LinearClient } = require('@linear/sdk');
@@ -76,50 +80,6 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000);
 
-// ─── Triage Select Menus ──────────────────────────────────────────────────────
-function buildTriageComponents() {
-  const sourceSelect = new StringSelectMenuBuilder()
-    .setCustomId('triage_source')
-    .setPlaceholder('Source')
-    .addOptions(
-      new StringSelectMenuOptionBuilder()
-        .setLabel('Quality Assurance')
-        .setDescription('Internal QA team reporting')
-        .setValue('QA'),
-      new StringSelectMenuOptionBuilder()
-        .setLabel('Community Support')
-        .setDescription('Customer-facing support team')
-        .setValue('CS'),
-    );
-
-  const typeSelect = new StringSelectMenuBuilder()
-    .setCustomId('triage_type')
-    .setPlaceholder('Ticket Type')
-    .addOptions(
-      new StringSelectMenuOptionBuilder()
-        .setLabel('Bug Report')
-        .setDescription('Something is broken or not working as expected')
-        .setValue('bug'),
-      new StringSelectMenuOptionBuilder()
-        .setLabel('Feature Request')
-        .setDescription('Suggest a new feature or improvement')
-        .setValue('feature'),
-      new StringSelectMenuOptionBuilder()
-        .setLabel('General Inquiry')
-        .setDescription('Questions or general support')
-        .setValue('general'),
-      new StringSelectMenuOptionBuilder()
-        .setLabel('Performance / Outage')
-        .setDescription('Service is slow, down, or degraded')
-        .setValue('outage'),
-    );
-
-  return [
-    new ActionRowBuilder().addComponents(sourceSelect),
-    new ActionRowBuilder().addComponents(typeSelect),
-  ];
-}
-
 // ─── Details Modal ────────────────────────────────────────────────────────────
 function buildDetailsModal(source, type) {
   const titles = {
@@ -139,29 +99,6 @@ function buildDetailsModal(source, type) {
   const modal = new ModalBuilder()
     .setCustomId(`ticket_details::${source}::${type}`)
     .setTitle(titles[type] ?? 'Ticket Details');
-
-  const prioritySelect = new StringSelectMenuBuilder()
-    .setCustomId('ticket_priority')
-    .setPlaceholder('Select a priority...')
-    .setRequired(true)
-    .addOptions(
-      new StringSelectMenuOptionBuilder()
-        .setLabel('Critical')
-        .setDescription('Production is down, immediate action needed')
-        .setValue('critical'),
-      new StringSelectMenuOptionBuilder()
-        .setLabel('High')
-        .setDescription('Major feature broken, no workaround')
-        .setValue('high'),
-      new StringSelectMenuOptionBuilder()
-        .setLabel('Medium')
-        .setDescription('Issue exists but a workaround is available')
-        .setValue('medium'),
-      new StringSelectMenuOptionBuilder()
-        .setLabel('Low')
-        .setDescription('Minor issue or cosmetic problem')
-        .setValue('low'),
-    );
 
   const platformSelect = new StringSelectMenuBuilder()
     .setCustomId('ticket_platform')
@@ -194,10 +131,6 @@ function buildDetailsModal(source, type) {
     .setMaxValues(3)
     .setRequired(false);
 
-  const priorityLabel = new LabelBuilder()
-    .setLabel('Priority')
-    .setStringSelectMenuComponent(prioritySelect);
-
   const platformLabel = new LabelBuilder()
     .setLabel('Platform')
     .setStringSelectMenuComponent(platformSelect);
@@ -216,18 +149,16 @@ function buildDetailsModal(source, type) {
     .setDescription('Screenshots or videos (optional, max 3)')
     .setFileUploadComponent(fileUpload);
 
-  modal.addLabelComponents(priorityLabel, platformLabel, titleLabel, descLabel, fileLabel);
+  modal.addLabelComponents(platformLabel, titleLabel, descLabel, fileLabel);
   return modal;
 }
 
 // ─── Lookup Maps ──────────────────────────────────────────────────────────────
-const linearPriority = { critical: 1, high: 2, medium: 3, low: 4 };
-const priorityEmoji  = { critical: '🔴', high: '🟠', medium: '🟡', low: '🟢' };
-const typeEmoji      = { bug: '🐛', feature: '✨', general: '💬', outage: '🚨' };
-const platformEmoji  = { desktop: '🖥️', console: '🎮', ios: '📱', android: '🤖' };
-const sourceEmoji    = { QA: '🔬', CS: '🎧' };
-const sourceLabel    = { QA: 'Quality Assurance', CS: 'Community Support' };
-const embedColor     = { critical: 0xe74c3c, high: 0xe67e22, medium: 0xf1c40f, low: 0x2ecc71 };
+const typeEmoji     = { bug: '🐛', feature: '✨', general: '💬', outage: '🚨' };
+const platformEmoji = { desktop: '🖥️', console: '🎮', ios: '📱', android: '🤖' };
+const sourceEmoji   = { QA: '🔬', CS: '🎧' };
+const sourceLabel   = { QA: 'Quality Assurance', CS: 'Community Support' };
+const embedColor    = { bug: 0xe74c3c, feature: 0x5E6AD2, general: 0x2ecc71, outage: 0xe67e22 };
 
 function capitalize(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
@@ -238,7 +169,6 @@ async function handleModalSubmit(interaction) {
   await interaction.deferReply();
 
   const [, source, type] = interaction.customId.split('::');
-  const priority      = interaction.fields.getStringSelectValues('ticket_priority')[0];
   const platform      = interaction.fields.getStringSelectValues('ticket_platform')[0];
   const title         = interaction.fields.getTextInputValue('ticket_title');
   const description   = interaction.fields.getTextInputValue('ticket_description');
@@ -277,14 +207,12 @@ async function handleModalSubmit(interaction) {
       description: [
         `**Source:** ${sourceLabel[source] ?? source}`,
         `**Type:** ${capitalize(type)}`,
-        `**Priority:** ${capitalize(priority)}`,
         `**Platform:** ${capitalize(platform)}`,
         '',
         '**Description:**',
         description,
         attachmentMarkdown,
       ].join('\n'),
-      priority: linearPriority[priority] ?? 3,
       labelIds: getLabelIds(source),
     });
 
@@ -304,13 +232,12 @@ async function handleModalSubmit(interaction) {
       });
 
       const embed = new EmbedBuilder()
-        .setColor(embedColor[priority] ?? 0x5E6AD2)
+        .setColor(embedColor[type] ?? 0x5E6AD2)
         .setTitle(`${typeEmoji[type]}  ${title}`)
         .setDescription(identifier ? `**${identifier}** — ${title}` : title)
         .addFields(
           { name: 'Source',      value: `${sourceEmoji[source]}  ${sourceLabel[source] ?? source}`, inline: true },
           { name: 'Type',        value: `${typeEmoji[type]}  ${capitalize(type)}`,                  inline: true },
-          { name: 'Priority',    value: `${priorityEmoji[priority]}  ${capitalize(priority)}`,      inline: true },
           { name: 'Platform',    value: `${platformEmoji[platform]}  ${capitalize(platform)}`,      inline: true },
           { name: 'Reported by', value: interaction.user.tag,                                       inline: true },
           { name: 'Status',      value: 'Triage',                                                   inline: true },
@@ -361,21 +288,59 @@ module.exports = {
     .setName('reportissue')
     .setDescription('Report an issue through our gateway triage'),
 
-  // Slash command → send ephemeral triage selects with explanations
+  // Slash command → send ephemeral triage selects with interleaved text blurbs
   async execute(interaction) {
+    const sourceText = new TextDisplayBuilder()
+      .setContent('**Source** — Who is submitting this report?\n');
+
+    const sourceRow = new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId('triage_source')
+        .setPlaceholder('Source')
+        .addOptions(
+          new StringSelectMenuOptionBuilder()
+            .setLabel('Quality Assurance')
+            .setDescription('Internal QA team reporting')
+            .setValue('QA'),
+          new StringSelectMenuOptionBuilder()
+            .setLabel('Community Support')
+            .setDescription('Internal community support team')
+            .setValue('CS'),
+        )
+    );
+
+    const separator = new SeparatorBuilder()
+      .setDivider(false)
+      .setSpacing(SeparatorSpacingSize.Small);
+
+    const typeText = new TextDisplayBuilder()
+      .setContent('**Ticket Type** — What kind of report is this?\n-# Bug Report for broken functionality, Feature Request for improvements, General Inquiry for questions, Performance / Outage for service degradation.');
+
+    const typeRow = new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId('triage_type')
+        .setPlaceholder('Ticket Type')
+        .addOptions(
+          new StringSelectMenuOptionBuilder()
+            .setLabel('Bug Report')
+            .setDescription('Something is broken or not working as expected')
+            .setValue('bug'),
+          new StringSelectMenuOptionBuilder()
+            .setLabel('Feature Request')
+            .setDescription('Suggest a new feature or improvement')
+            .setValue('feature'),
+          new StringSelectMenuOptionBuilder()
+            .setLabel('Performance / Outage')
+            .setDescription('Game systems are performing poorly or not at all')
+            .setValue('outage'),
+        )
+    );
+
     await interaction.reply({
-      content: [
-        '### Create New Report',
-        '',
-        '**Source** — Who is submitting this report?',
-        '-# Quality Assurance is for internal QA team members. Community Support is for customer-facing support staff.',
-        '',
-        '**Ticket Type** — What kind of report is this?',
-        '-# Bug Report for broken functionality, Feature Request for improvements, General Inquiry for questions, Performance / Outage for service degradation.',
-      ].join('\n'),
-      components: buildTriageComponents(),
-      ephemeral: true,
+      components: [sourceText, sourceRow, separator, typeText, typeRow],
+      flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
     });
+
     userTriage.set(interaction.user.id, {
       source: null, type: null,
       startedAt: Date.now(),
