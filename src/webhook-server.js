@@ -32,14 +32,14 @@ class WebhookServer {
     console.log('Received webhook:', payload.type);
 
     if (payload.type !== 'Issue' || payload.action !== 'create') {
-      console.log('Ignoring event:', payload.type, payload.action);
+      console.log('Ignoring event where action wasnt create:', payload.type, payload.action);
       return;
     }
 
     const teamId = payload.data?.team?.id;
     if (teamId !== process.env.LINEAR_TEAM_GATEWAY) {
-      console.log('Ignoring event from team:', teamId);
-      return;
+      //console.log('Ignoring event from team:', teamId);
+      //return;
     }
 
     await this.handleIssueCreated(payload.data, payload.actor);
