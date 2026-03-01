@@ -1,70 +1,16 @@
-const {
-  SlashCommandBuilder,
-  ModalBuilder,
-  LabelBuilder,
-  TextInputBuilder,
-  TextInputStyle,
-  FileUploadBuilder,
-  StringSelectMenuBuilder,
-  StringSelectMenuOptionBuilder,
-  ActionRowBuilder,
-  TextDisplayBuilder,
-  SeparatorBuilder,
-  SeparatorSpacingSize,
-  MessageFlags,
-  EmbedBuilder,
-} = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder  } = require('discord.js');
 const { LinearClient } = require('@linear/sdk');
 
-// ─── Linear Helpers ───────────────────────────────────────────────────────────
 function getLabelIds(source) {
   const labelIds = [];
-  if (source === 'QA' && process.env.LINEAR_LABEL_QA) labelIds.push(process.env.LINEAR_LABEL_QA);
-  else if (source === 'CS' && process.env.LINEAR_LABEL_CS) labelIds.push(process.env.LINEAR_LABEL_CS);
-  return labelIds;
-}
-
-const ALLOWED_CONTENT_TYPES = [
-  'image/png',
-  'image/jpeg',
-  'image/gif',
-  'image/webp',
-  'video/mp4',
-  'video/quicktime',
-  'video/webm',
-  'video/mov',
-];
-
-async function uploadFileToLinear(linearClient, file) {
-  try {
-    if (file.contentType && !ALLOWED_CONTENT_TYPES.includes(file.contentType)) {
-      console.warn(`Unexpected file type uploaded: ${file.contentType} (${file.name})`);
-    }
-
-    const response = await fetch(file.url);
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
-    const uploadPayload = await linearClient.fileUpload(
-      file.contentType || 'application/octet-stream',
-      file.name,
-      buffer.length
-    );
-
-    await fetch(uploadPayload.uploadUrl, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': file.contentType || 'application/octet-stream',
-        'Cache-Control': 'public, max-age=31536000',
-      },
-      body: buffer,
-    });
-
-    return uploadPayload.assetUrl;
-  } catch (error) {
-    console.error(`Error uploading file to Linear (${file.name}):`, error);
-    return null;
+  
+  if (source === 'QA' && process.env.LINEAR_LABEL_QA) {
+    labelIds.push(process.env.LINEAR_LABEL_QA);
+  } else if (source === 'CS' && process.env.LINEAR_LABEL_CS) {
+    labelIds.push(process.env.LINEAR_LABEL_CS);
   }
+  
+  return labelIds;
 }
 
 // ─── Linear State Resolution ──────────────────────────────────────────────────
@@ -81,9 +27,9 @@ async function resolveTriageStateId() {
     });
     triageStateId = states.nodes[0]?.id ?? null;
     if (triageStateId) {
-      console.log(`Resolved Linear Triage state ID: ${triageStateId}`);
+      console.log(`✅ Resolved Linear Triage state ID: ${triageStateId}`);
     } else {
-      console.warn('Could not find a "Triage" workflow state for this team — issues will fall back to default.');
+      console.warn('⚠️  Could not find a "Triage" workflow state for this team — issues will fall back to default.');
     }
   } catch (err) {
     console.error('Error resolving Linear Triage state:', err);
@@ -91,328 +37,213 @@ async function resolveTriageStateId() {
   return triageStateId;
 }
 
-// ─── Triage State ─────────────────────────────────────────────────────────────
-// Keyed by userId. Stores triage selections + the original interaction so we
-// can delete the ephemeral prompt message once the modal is submitted.
-const userTriage = new Map();
+async function uploadFileToLinear(linearClient, attachment) {
+  try {
+    // Fetch the file from Discord CDN
+    const response = await fetch(attachment.url);
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
 
-// Prune sessions abandoned for more than 10 minutes to prevent memory leak
-setInterval(() => {
-  const cutoff = Date.now() - 10 * 60 * 1000;
-  for (const [userId, triage] of userTriage) {
-    if (triage.startedAt < cutoff) userTriage.delete(userId);
-  }
-}, 5 * 60 * 1000);
-
-// ─── Details Modal ────────────────────────────────────────────────────────────
-function buildDetailsModal(source, type) {
-  const titles = {
-    bug:     'Bug Report — Details',
-    feature: 'Feature Request — Details',
-    general: 'General — Details',
-    outage:  'Performance / Outage — Details',
-  };
-
-  const descHints = {
-    bug:     'Steps to reproduce, expected vs actual behaviour, any error messages',
-    feature: "Problem you're trying to solve and your proposed solution",
-    outage:  'What is affected, when it started, how many users impacted',
-  };
-
-  const modal = new ModalBuilder()
-    .setCustomId(`ticket_details::${source}::${type}`)
-    .setTitle(titles[type] ?? 'Ticket Details');
-
-  const platformSelect = new StringSelectMenuBuilder()
-    .setCustomId('ticket_platform')
-    .setPlaceholder('Select a platform...')
-    .setRequired(true)
-    .addOptions(
-      new StringSelectMenuOptionBuilder().setLabel('Desktop').setValue('desktop'),
-      new StringSelectMenuOptionBuilder().setLabel('Console').setValue('console'),
-      new StringSelectMenuOptionBuilder().setLabel('Mobile - iOS').setValue('ios'),
-      new StringSelectMenuOptionBuilder().setLabel('Mobile - Android').setValue('android'),
+    // Request upload URL from Linear
+    const uploadPayload = await linearClient.fileUpload(
+      attachment.contentType || 'application/octet-stream',
+      attachment.name,
+      buffer.length
     );
 
-  const titleInput = new TextInputBuilder()
-    .setCustomId('ticket_title')
-    .setStyle(TextInputStyle.Short)
-    .setPlaceholder('Brief summary of the issue or request')
-    .setMaxLength(100)
-    .setRequired(true);
-
-  const descInput = new TextInputBuilder()
-    .setCustomId('ticket_description')
-    .setStyle(TextInputStyle.Paragraph)
-    .setPlaceholder(descHints[type] ?? 'Provide as much detail as possible...')
-    .setMaxLength(2000)
-    .setRequired(true);
-
-  const fileUpload = new FileUploadBuilder()
-    .setCustomId('ticket_attachments')
-    .setMinValues(0)
-    .setMaxValues(3)
-    .setRequired(false);
-
-  const platformLabel = new LabelBuilder()
-    .setLabel('Platform')
-    .setStringSelectMenuComponent(platformSelect);
-
-  const titleLabel = new LabelBuilder()
-    .setLabel('Title')
-    .setTextInputComponent(titleInput);
-
-  const descLabel = new LabelBuilder()
-    .setLabel('Description')
-    .setDescription(descHints[type])
-    .setTextInputComponent(descInput);
-
-  const fileLabel = new LabelBuilder()
-    .setLabel('Attachments')
-    .setDescription('Screenshots or videos (optional, max 3)')
-    .setFileUploadComponent(fileUpload);
-
-  modal.addLabelComponents(platformLabel, titleLabel, descLabel, fileLabel);
-  return modal;
-}
-
-// ─── Lookup Maps ──────────────────────────────────────────────────────────────
-const typeEmoji   = { bug: '🐛', feature: '✨', outage: '🚨' };
-const sourceLabel = { QA: 'Quality Assurance', CS: 'Community Support' };
-const embedColor  = { bug: 0xe74c3c, feature: 0x5E6AD2, general: 0x2ecc71, outage: 0xe67e22 };
-
-function capitalize(str) {
-  return str.charAt(0).toUpperCase() + str.slice(1);
-}
-
-// ─── Handle Modal Submission → create Linear issue ────────────────────────────
-async function handleModalSubmit(interaction, originalInteraction) {
-  await interaction.deferReply();
-
-  const [, source, type] = interaction.customId.split('::');
-  const platform      = interaction.fields.getStringSelectValues('ticket_platform')[0];
-  const title         = interaction.fields.getTextInputValue('ticket_title');
-  const description   = interaction.fields.getTextInputValue('ticket_description');
-  const uploadedFiles = interaction.fields.getUploadedFiles('ticket_attachments') ?? [];
-
-  // Delete the original ephemeral triage prompt now that the modal is submitted
-  if (originalInteraction) {
-    try {
-      await originalInteraction.deleteReply();
-    } catch {
-      // If already dismissed or expired, ignore silently
-    }
-  }
-
-  try {
-    const linearClient = new LinearClient({ apiKey: process.env.LINEAR_API_KEY });
-    const teamId = process.env.LINEAR_TEAM_GATEWAY;
-
-    if (!teamId) {
-      await interaction.editReply({ content: 'Gateway team not configured. Please contact an admin.' });
-      return;
-    }
-
-    // Upload all attachments to Linear in parallel
-    let attachmentMarkdown = '';
-    if (uploadedFiles.length > 0) {
-      const uploadedUrls = await Promise.all(
-        uploadedFiles.map(file => uploadFileToLinear(linearClient, file))
-      );
-
-      attachmentMarkdown = '\n\n**Attachments:**\n\n';
-      uploadedFiles.forEach((file, i) => {
-        const url = uploadedUrls[i] || file.url;
-        if (file.contentType?.startsWith('image/') || file.contentType?.startsWith('video/')) {
-          attachmentMarkdown += `![${file.name}](${url})\n\n`;
-        } else {
-          attachmentMarkdown += `[${file.name}](${url})\n\n`;
-        }
-      });
-    }
-
-    const stateId = await resolveTriageStateId();
-
-    const issue = await linearClient.createIssue({
-      teamId,
-      title,
-      description: [
-        `**Source:** ${source}`,
-        `**Type:** ${capitalize(type)}`,
-        `**Platform:** ${capitalize(platform)}`,
-        '',
-        '**Description:**',
-        description,
-        attachmentMarkdown,
-      ].join('\n'),
-      labelIds: getLabelIds(source),
-      ...(stateId && { stateId }),
+    // Upload the file to Linear's storage
+    await fetch(uploadPayload.uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': attachment.contentType || 'application/octet-stream',
+        'Cache-Control': 'public, max-age=31536000',
+      },
+      body: buffer,
     });
 
-    const createdIssue = await issue.issue;
-
-    if (createdIssue) {
-      const identifier = createdIssue.url
-        ? createdIssue.url.split('/issue/')[1]?.split('/')[0]
-        : null;
-
-      const messageUrl = `https://discord.com/channels/${interaction.guildId}/${interaction.channelId}/${interaction.id}`;
-      await linearClient.createAttachment({
-        issueId: createdIssue.id,
-        title: 'Issue Report from Discord',
-        url: messageUrl,
-        subtitle: `#${interaction.channel?.name || 'unknown'} — ${interaction.user.tag} :: ${identifier} created`,
-      });
-
-      const embed = new EmbedBuilder()
-        .setColor(embedColor[type] ?? 0x5E6AD2)
-        .setTitle(`${typeEmoji[type]}  ${title}`)
-        .setDescription(identifier ? `**${identifier}** — ${title}` : title)
-        .addFields(
-          { name: 'Source',      value: source,                   inline: true }, // QA or CS directly
-          { name: 'Type',        value: capitalize(type),          inline: true },
-          { name: 'Platform',    value: capitalize(platform),      inline: true },
-          { name: 'Reported by', value: interaction.user.tag,      inline: true },
-          { name: 'Status',      value: 'Triage',                  inline: true },
-          { name: 'Description', value: description },
-        )
-        .setURL(createdIssue.url)
-        .setTimestamp()
-        .setFooter({ text: 'LinearFlow Bot' });
-
-      if (uploadedFiles.length > 0) {
-        embed.addFields({
-          name: 'Attachments',
-          value: uploadedFiles.map(f => f.name).join('\n'),
-          inline: false,
-        });
-      }
-
-      const ticketChannelId = process.env.TICKET_CHANNEL_ID;
-      if (ticketChannelId) {
-        const channel = await interaction.client.channels.fetch(ticketChannelId);
-        await channel.send({ embeds: [embed] });
-        await interaction.editReply({ content: '✅ Your issue has been submitted to Linear!' });
-      } else {
-        await interaction.editReply({ embeds: [embed] });
-      }
-
-    } else {
-      await interaction.editReply({ content: '✅ Issue submitted to Linear successfully!' });
-    }
-
+    // Return the asset URL that Linear can use
+    return uploadPayload.assetUrl;
   } catch (error) {
-    console.error('Error creating Linear issue:', error);
-    await interaction.editReply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor(0xff0000)
-          .setTitle('Error')
-          .setDescription('Failed to create the issue in Linear. Please try again later.')
-          .setTimestamp(),
-      ],
-    });
+    console.error('Error uploading file to Linear:', error);
+    return null;
   }
 }
 
-// ─── Command Export ───────────────────────────────────────────────────────────
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('reportissue')
-    .setDescription('Report an issue through our gateway triage'),
+    .setDescription('Report an issue through our gateway triage')
+    .addStringOption(option =>
+      option
+        .setName('source')
+        .setDescription('Source of the issue')
+        .setRequired(true)
+        .addChoices(
+          { name: 'Quality Assurance', value: 'QA' },
+          { name: 'Community Support', value: 'CS' }
+        )
+    )
+    .addStringOption(option =>
+      option
+        .setName('title')
+        .setDescription('Brief title of the issue')
+        .setRequired(true)
+    )
+    .addStringOption(option =>
+      option
+        .setName('description')
+        .setDescription('Detailed description of the issue')
+        .setRequired(true)
+    )
+    .addAttachmentOption(option =>
+      option
+        .setName('attachment1')
+        .setDescription('Screenshot or video (optional)')
+        .setRequired(false)
+    )
+    .addAttachmentOption(option =>
+      option
+        .setName('attachment2')
+        .setDescription('Additional screenshot or video (optional)')
+        .setRequired(false)
+    )
+    .addAttachmentOption(option =>
+      option
+        .setName('attachment3')
+        .setDescription('Additional screenshot or video (optional)')
+        .setRequired(false)
+    ),
 
   // Called once at startup by index.js to resolve and cache the Triage state ID
   async init() {
     await resolveTriageStateId();
   },
 
-  // Slash command → send ephemeral triage selects with interleaved text blurbs
   async execute(interaction) {
-    const sourceText = new TextDisplayBuilder()
-      .setContent('**Creating a new ticket**\nMake sure you have any media content for your ticket ready\n\n**Source** — Which team is submitting this report?\n');
+    // Defer reply since Linear API might take a moment
+    await interaction.deferReply();
 
-    const sourceRow = new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId('triage_source')
-        .setPlaceholder('Source')
-        .addOptions(
-          new StringSelectMenuOptionBuilder()
-            .setLabel('Quality Assurance')
-            .setDescription('Internal QA team reporting')
-            .setValue('QA'),
-          new StringSelectMenuOptionBuilder()
-            .setLabel('Community Support')
-            .setDescription('Internal community support team')
-            .setValue('CS'),
-        )
-    );
+    try {
+      const linearClient = new LinearClient({
+        apiKey: process.env.LINEAR_API_KEY,
+      });
 
-    const separator = new SeparatorBuilder()
-      .setDivider(false)
-      .setSpacing(SeparatorSpacingSize.Small);
+      const title = interaction.options.getString('title');
+      const description = interaction.options.getString('description');
+      const source = interaction.options.getString('source');
+      const teamId = process.env.LINEAR_TEAM_GATEWAY;
 
-    const typeText = new TextDisplayBuilder()
-      .setContent('**Ticket Type** — What kind of report is this?\n');
+      // Get attachments
+      const attachment1 = interaction.options.getAttachment('attachment1');
+      const attachment2 = interaction.options.getAttachment('attachment2');
+      const attachment3 = interaction.options.getAttachment('attachment3');
 
-    const typeRow = new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId('triage_type')
-        .setPlaceholder('Ticket Type')
-        .addOptions(
-          new StringSelectMenuOptionBuilder()
-            .setLabel('Bug Report')
-            .setDescription('Something is broken or not working as expected')
-            .setValue('bug'),
-          new StringSelectMenuOptionBuilder()
-            .setLabel('Feature Request')
-            .setDescription('Suggest a new feature or improvement')
-            .setValue('feature'),
-          new StringSelectMenuOptionBuilder()
-            .setLabel('Performance / Outage')
-            .setDescription('Game systems are performing poorly or not at all')
-            .setValue('outage'),
-        )
-    );
+      const attachments = [attachment1, attachment2, attachment3].filter(Boolean);
 
-    await interaction.reply({
-      components: [sourceText, sourceRow, separator, typeText, typeRow],
-      flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
-    });
-
-    // Store the interaction so we can delete the reply after modal submission
-    userTriage.set(interaction.user.id, {
-      source: null, type: null,
-      originalInteraction: interaction,
-      startedAt: Date.now(),
-    });
-  },
-
-  // Select menus + modal submission routed here from index.js
-  async handleInteraction(interaction) {
-
-    // Select menu picks — accumulate until both chosen, then fire modal
-    if (interaction.isStringSelectMenu()) {
-      const triage = userTriage.get(interaction.user.id) ?? {};
-
-      if (interaction.customId === 'triage_source') triage.source = interaction.values[0];
-      if (interaction.customId === 'triage_type')   triage.type   = interaction.values[0];
-
-      userTriage.set(interaction.user.id, triage);
-
-      if (triage.source && triage.type) {
-        const modal = buildDetailsModal(triage.source, triage.type);
-        await interaction.showModal(modal);
-        userTriage.delete(interaction.user.id);
-      } else {
-        await interaction.deferUpdate();
+      // Check if team ID is set
+      if (!teamId) {
+        await interaction.editReply({
+          content: 'Gateway team not configured. Please contact an admin.',
+        });
+        return;
       }
-      return;
-    }
 
-    // Modal submission — pass original interaction for prompt deletion
-    if (interaction.isModalSubmit()) {
-      const triage = userTriage.get(interaction.user.id);
-      await handleModalSubmit(interaction, triage?.originalInteraction ?? null);
+      // Upload files to Linear IN PARALLEL for better performance
+      let attachmentLinks = '';
+      
+      if (attachments.length > 0) {
+        attachmentLinks = '\n\n**Attachments:**\n\n';
+        
+        const uploadPromises = attachments.map(att => uploadFileToLinear(linearClient, att));
+        const uploadedUrls = await Promise.all(uploadPromises);
+        
+        attachments.forEach((att, index) => {
+          const assetUrl = uploadedUrls[index];
+          const urlToUse = assetUrl || att.url;
+          
+          if (att.contentType && att.contentType.startsWith('image/')) {
+            attachmentLinks += `![${att.name}](${urlToUse})\n\n`;
+          } else if (att.contentType && att.contentType.startsWith('video/')) {
+            attachmentLinks += `![${att.name}](${urlToUse})\n\n`;
+          } else {
+            attachmentLinks += `[${att.name}](${urlToUse})\n\n`;
+          }
+        });
+      }
+
+      // Resolve Triage state (cached after first call)
+      const stateId = await resolveTriageStateId();
+
+      // Create the issue in Linear
+      const issue = await linearClient.createIssue({
+        teamId: teamId,
+        title: title,
+        description: `**Source:** ${source}
+**User Description:** ${description}\n${attachmentLinks}`,
+        labelIds: getLabelIds(source),
+        ...(stateId && { stateId }),
+      });
+
+      // Get the created issue details
+      const createdIssue = await issue.issue;
+      
+      if (createdIssue) {
+
+        // Extract identifier from URL
+        const identifier = createdIssue.url ? createdIssue.url.split('/issue/')[1]?.split('/')[0] : null;
+
+        // Build Discord message URL
+        const messageUrl = `https://discord.com/channels/${interaction.guildId}/${interaction.channelId}/${interaction.id}`;
+
+        await linearClient.createAttachment({
+          issueId: createdIssue.id,
+          title: 'Bug Report from Discord',
+          url: messageUrl,
+          subtitle: `#${interaction.channel?.name || 'unknown'} - ${interaction.user.tag} :: Issue ${identifier} created`,
+        });
+
+        // Create the embed
+        const embed = new EmbedBuilder()
+          .setColor(0x5E6AD2)
+          .setTitle('Bug Report Created')
+          .setDescription(identifier ? `**${identifier}** - ${title}` : title)
+          .addFields(
+            { name: 'Reported by', value: interaction.user.tag, inline: true },
+            { name: 'Team', value: 'Gateway', inline: true },
+            { name: 'Source', value: source, inline: true },
+            { name: 'Status', value: 'Triage', inline: true },
+          )
+          .setURL(createdIssue.url)
+          .setTimestamp()
+          .setFooter({ text: 'LinearFlow Bot' });
+
+        // Add attachment info to embed
+        if (attachments.length > 0) {
+          embed.addFields({
+            name: 'Attachments',
+            value: attachments.map(att => `📎 ${att.name}`).join('\n'),
+            inline: false
+          });
+        }
+
+        // Send the embed
+        await interaction.editReply({ embeds: [embed] });
+      } else {
+        await interaction.editReply({
+          content: 'Bug report submitted successfully!',
+        });
+      }
+
+    } catch (error) {
+      console.error('Error creating Linear issue:', error);
+      
+      const errorEmbed = new EmbedBuilder()
+        .setColor(0xFF0000)
+        .setTitle('Error')
+        .setDescription('Failed to create bug report. Please try again later.')
+        .setTimestamp();
+
+      await interaction.editReply({ embeds: [errorEmbed] });
     }
   },
 };
