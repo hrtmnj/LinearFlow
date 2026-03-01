@@ -54,7 +54,6 @@ class WebhookServer {
       await this.handleIssueCreated(payload.data, payload.actor);
 
     } else if (payload.type === 'Project') {
-      console.log('Project payload:', JSON.stringify(payload.data, null, 2));
       await this.handleProjectCreated(payload.data, payload.actor);
 
     } else {
