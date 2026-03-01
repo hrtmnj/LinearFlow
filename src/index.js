@@ -66,9 +66,14 @@ client.on('interactionCreate', async interaction => {
 });
 
 // ─── Ready ────────────────────────────────────────────────────────────────────
-client.once('clientReady', () => {
+client.once('clientReady', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   console.log(`📝 Loaded ${client.commands.size} commands`);
+
+  // Run any per-command init hooks (e.g. resolving Linear state IDs)
+  for (const command of client.commands.values()) {
+    if (typeof command.init === 'function') await command.init();
+  }
 
   const webhookServer = new WebhookServer(client);
   webhookServer.start();

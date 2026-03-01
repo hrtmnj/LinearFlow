@@ -67,9 +67,33 @@ async function uploadFileToLinear(linearClient, file) {
   }
 }
 
+// ─── Linear State Resolution ──────────────────────────────────────────────────
+// Resolves the "Triage" workflow state ID for the gateway team at startup so we
+// never need to hardcode or manually look up a UUID. Cached after first fetch.
+let triageStateId = null;
+
+async function resolveTriageStateId() {
+  if (triageStateId) return triageStateId;
+  try {
+    const linearClient = new LinearClient({ apiKey: process.env.LINEAR_API_KEY });
+    const states = await linearClient.workflowStates({
+      filter: { team: { id: { eq: process.env.LINEAR_TEAM_GATEWAY } }, name: { eq: 'Triage' } },
+    });
+    triageStateId = states.nodes[0]?.id ?? null;
+    if (triageStateId) {
+      console.log(`Resolved Linear Triage state ID: ${triageStateId}`);
+    } else {
+      console.warn('Could not find a "Triage" workflow state for this team — issues will fall back to default.');
+    }
+  } catch (err) {
+    console.error('Error resolving Linear Triage state:', err);
+  }
+  return triageStateId;
+}
+
 // ─── Triage State ─────────────────────────────────────────────────────────────
-// Keyed by userId. In-memory is fine — if the bot restarts mid-triage the user
-// just runs /reportissue again.
+// Keyed by userId. Stores triage selections + the original interaction so we
+// can delete the ephemeral prompt message once the modal is submitted.
 const userTriage = new Map();
 
 // Prune sessions abandoned for more than 10 minutes to prevent memory leak
@@ -153,16 +177,16 @@ function buildDetailsModal(source, type) {
 }
 
 // ─── Lookup Maps ──────────────────────────────────────────────────────────────
-const typeEmoji     = { bug: '🐛', feature: '✨', outage: '🚨' };
-const sourceLabel   = { QA: 'Quality Assurance', CS: 'Community Support' };
-const embedColor    = { bug: 0xe74c3c, feature: 0x5E6AD2, general: 0x2ecc71, outage: 0xe67e22 };
+const typeEmoji   = { bug: '🐛', feature: '✨', outage: '🚨' };
+const sourceLabel = { QA: 'Quality Assurance', CS: 'Community Support' };
+const embedColor  = { bug: 0xe74c3c, feature: 0x5E6AD2, general: 0x2ecc71, outage: 0xe67e22 };
 
 function capitalize(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
 // ─── Handle Modal Submission → create Linear issue ────────────────────────────
-async function handleModalSubmit(interaction) {
+async function handleModalSubmit(interaction, originalInteraction) {
   await interaction.deferReply();
 
   const [, source, type] = interaction.customId.split('::');
@@ -170,6 +194,15 @@ async function handleModalSubmit(interaction) {
   const title         = interaction.fields.getTextInputValue('ticket_title');
   const description   = interaction.fields.getTextInputValue('ticket_description');
   const uploadedFiles = interaction.fields.getUploadedFiles('ticket_attachments') ?? [];
+
+  // Delete the original ephemeral triage prompt now that the modal is submitted
+  if (originalInteraction) {
+    try {
+      await originalInteraction.deleteReply();
+    } catch {
+      // If already dismissed or expired, ignore silently
+    }
+  }
 
   try {
     const linearClient = new LinearClient({ apiKey: process.env.LINEAR_API_KEY });
@@ -198,11 +231,13 @@ async function handleModalSubmit(interaction) {
       });
     }
 
+    const stateId = await resolveTriageStateId();
+
     const issue = await linearClient.createIssue({
       teamId,
       title,
       description: [
-        `**Source:** ${sourceLabel[source] ?? source}`,
+        `**Source:** ${source}`,
         `**Type:** ${capitalize(type)}`,
         `**Platform:** ${capitalize(platform)}`,
         '',
@@ -211,6 +246,7 @@ async function handleModalSubmit(interaction) {
         attachmentMarkdown,
       ].join('\n'),
       labelIds: getLabelIds(source),
+      ...(stateId && { stateId }),
     });
 
     const createdIssue = await issue.issue;
@@ -233,11 +269,11 @@ async function handleModalSubmit(interaction) {
         .setTitle(`${typeEmoji[type]}  ${title}`)
         .setDescription(identifier ? `**${identifier}** — ${title}` : title)
         .addFields(
-          { name: 'Source',      value: `${sourceLabel[source] ?? source}`, inline: true },
-          { name: 'Type',        value: `${capitalize(type)}`, inline: true },
-          { name: 'Platform',    value: `${capitalize(platform)}`, inline: true },
-          { name: 'Reported by', value: interaction.user.tag, inline: true },
-          { name: 'Status',      value: 'Triage', inline: true },
+          { name: 'Source',      value: source,                   inline: true }, // QA or CS directly
+          { name: 'Type',        value: capitalize(type),          inline: true },
+          { name: 'Platform',    value: capitalize(platform),      inline: true },
+          { name: 'Reported by', value: interaction.user.tag,      inline: true },
+          { name: 'Status',      value: 'Triage',                  inline: true },
           { name: 'Description', value: description },
         )
         .setURL(createdIssue.url)
@@ -285,10 +321,15 @@ module.exports = {
     .setName('reportissue')
     .setDescription('Report an issue through our gateway triage'),
 
+  // Called once at startup by index.js to resolve and cache the Triage state ID
+  async init() {
+    await resolveTriageStateId();
+  },
+
   // Slash command → send ephemeral triage selects with interleaved text blurbs
   async execute(interaction) {
     const sourceText = new TextDisplayBuilder()
-      .setContent('Creating a new ticket\nMake sure you have any media content for your ticket ready\n\n**Source** — Which team is submitting this report?\n');
+      .setContent('**Creating a new ticket**\nMake sure you have any media content for your ticket ready\n\n**Source** — Which team is submitting this report?\n');
 
     const sourceRow = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
@@ -338,8 +379,10 @@ module.exports = {
       flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
     });
 
+    // Store the interaction so we can delete the reply after modal submission
     userTriage.set(interaction.user.id, {
       source: null, type: null,
+      originalInteraction: interaction,
       startedAt: Date.now(),
     });
   },
@@ -366,9 +409,10 @@ module.exports = {
       return;
     }
 
-    // Modal submission
+    // Modal submission — pass original interaction for prompt deletion
     if (interaction.isModalSubmit()) {
-      await handleModalSubmit(interaction);
+      const triage = userTriage.get(interaction.user.id);
+      await handleModalSubmit(interaction, triage?.originalInteraction ?? null);
     }
   },
 };
