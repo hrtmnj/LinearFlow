@@ -40,18 +40,26 @@ class WebhookServer {
   async handleLinearWebhook(payload) {
     console.log('Received webhook:', payload.type, payload.action);
 
-    if (payload.type !== 'Issue' || payload.action !== 'create') {
+    if (payload.action !== 'create') {
       console.log('Ignoring event where action wasnt create:', payload.type, payload.action);
       return;
     }
 
-    const teamId = payload.data?.team?.id;
-    if (this.allowedTeamIds.size > 0 && !this.allowedTeamIds.has(teamId)) {
-      console.log('Ignoring event from unlisted team:', teamId);
-      return;
-    }
+    if (payload.type === 'Issue') {
+      const teamId = payload.data?.team?.id;
+      if (this.allowedTeamIds.size > 0 && !this.allowedTeamIds.has(teamId)) {
+        console.log('Ignoring event from unlisted team:', teamId);
+        return;
+      }
+      await this.handleIssueCreated(payload.data, payload.actor);
 
-    await this.handleIssueCreated(payload.data, payload.actor);
+    } else if (payload.type === 'Project') {
+      console.log('Project payload:', JSON.stringify(payload.data, null, 2));
+      await this.handleProjectCreated(payload.data, payload.actor);
+
+    } else {
+      console.log('Ignoring unhandled type:', payload.type);
+    }
   }
 
   async handleIssueCreated(issue, actor) {
@@ -110,6 +118,41 @@ class WebhookServer {
 
     if (description) {
       embed.addFields({ name: 'Description', value: description, inline: false });
+    }
+
+    await channel.send({ embeds: [embed] });
+  }
+
+  async handleProjectCreated(project, actor) {
+    const channelId = process.env.DISCORD_CHANNEL_ISSUES;
+    const channel = await this.client.channels.fetch(channelId);
+
+    if (!channel) {
+      console.error('Channel not found:', channelId);
+      return;
+    }
+
+    const { EmbedBuilder } = require('discord.js');
+
+    const actorName = actor?.name || 'Someone';
+
+    const embed = new EmbedBuilder()
+      .setColor(0xe67e22)
+      .setAuthor({ name: `${actorName} created a new project` })
+      .setTitle(project.name)
+      .setURL(project.url)
+      .setTimestamp();
+
+    if (project.description) {
+      const description = project.description
+        .replace(/!\[.*?\]\(.*?\)/g, '')
+        .replace(/\[.*?\]\(.*?\)/g, '')
+        .replace(/\*\*/g, '')
+        .trim()
+        .substring(0, 300);
+      if (description.length > 0) {
+        embed.addFields({ name: 'Description', value: description, inline: false });
+      }
     }
 
     await channel.send({ embeds: [embed] });
