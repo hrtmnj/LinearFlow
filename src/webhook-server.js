@@ -32,20 +32,20 @@ class WebhookServer {
     console.log('Received webhook:', payload.type);
 
     if (payload.type !== 'Issue' || payload.action !== 'create') {
-      console.log('Ignoring event since its not a creation:', payload.type, payload.action);
+      console.log('Ignoring event:', payload.type, payload.action);
       return;
     }
 
     const teamId = payload.data?.team?.id;
     if (teamId !== process.env.LINEAR_TEAM_GATEWAY) {
-      //console.log('Ignoring event from team:', teamId);
-      //return;
+      console.log('Ignoring event from team:', teamId);
+      return;
     }
 
-    await this.handleIssueCreated(payload.data);
+    await this.handleIssueCreated(payload.data, payload.actor);
   }
 
-  async handleIssueCreated(issue) {
+  async handleIssueCreated(issue, actor) {
     const channelId = process.env.DISCORD_CHANNEL_ISSUES;
     const channel = await this.client.channels.fetch(channelId);
 
@@ -68,13 +68,13 @@ class WebhookServer {
       if (description.length === 0) description = null;
     }
 
-    const actor = issue.creator?.name || 'Someone';
+    const actorName = actor?.name || 'Someone';
     const assignee = issue.assignee?.name || 'Unassigned';
     const type = issue.labelIds?.length ? (issue.labels?.[0]?.name || 'Issue') : 'Issue';
 
     const embed = new EmbedBuilder()
       .setColor(0x5E6AD2)
-      .setAuthor({ name: `${actor} created a new issue` })
+      .setAuthor({ name: `${actorName} created a new issue` })
       .setTitle(`${issue.identifier} - ${issue.title}`)
       .setURL(issue.url)
       .addFields(
