@@ -5,24 +5,18 @@ class WebhookServer {
   constructor(client) {
     this.app = express();
 
-    // Discord client
     this.client = client;
     this.port = process.env.WEBHOOK_PORT || 3000;
 
-    // Middleware
     this.app.use(bodyParser.json());
-
-    // Routes
     this.setupRoutes();
   }
 
   setupRoutes() {
-    // Health check
     this.app.get('/health', (req, res) => {
       res.json({ status: 'ok' });
     });
 
-    // Linear webhook endpoint
     this.app.post('/webhook/linear', async (req, res) => {
       try {
         await this.handleLinearWebhook(req.body);
@@ -37,32 +31,18 @@ class WebhookServer {
   async handleLinearWebhook(payload) {
     console.log('Received webhook:', payload.type);
 
-    // Filter: Only process certain event types
-    const allowedEvents = ['Issue', 'IssueUpdate', 'Comment'];
-    if (!allowedEvents.includes(payload.type)) {
+    if (payload.type !== 'Issue') {
       console.log('Ignoring event type:', payload.type);
       return;
     }
 
-    // Filter: Only process issues from specific teams
     const teamId = payload.data?.team?.id;
     if (teamId !== process.env.LINEAR_TEAM_GATEWAY) {
       //console.log('Ignoring event from team:', teamId);
       //return;
     }
 
-    // Route to appropriate handler
-    switch (payload.type) {
-      case 'Issue':
-        await this.handleIssueCreated(payload.data);
-        break;
-      case 'IssueUpdate':
-        await this.handleIssueUpdated(payload.data, payload.updatedFrom);
-        break;
-      case 'Comment':
-        await this.handleComment(payload.data);
-        break;
-    }
+    await this.handleIssueCreated(payload.data);
   }
 
   async handleIssueCreated(issue) {
@@ -76,78 +56,38 @@ class WebhookServer {
 
     const { EmbedBuilder } = require('discord.js');
 
-    const embed = new EmbedBuilder()
-      .setColor(0x5E6AD2)
-      .setTitle(`🆕 New Issue: ${issue.identifier}`)
-      .setDescription(issue.title)
-      .addFields(
-        { name: 'Status', value: issue.state?.name || 'Unknown', inline: true },
-        { name: 'Priority', value: this.getPriorityText(issue.priority), inline: true },
-        { name: 'Assignee', value: issue.assignee?.name || 'Unassigned', inline: true },
-      )
-      .setURL(issue.url)
-      .setTimestamp();
-
-    await channel.send({ embeds: [embed] });
-  }
-
-  async handleIssueUpdated(issue, updatedFrom) {
-    // Filter: Only notify on status changes
-    if (!updatedFrom.stateId) {
-      console.log('Ignoring non-status update');
-      return;
+    // Extract plain text description (strip markdown images/links)
+    let description = null;
+    if (issue.description) {
+      description = issue.description
+        .replace(/!\[.*?\]\(.*?\)/g, '')   // remove images
+        .replace(/\[.*?\]\(.*?\)/g, '')    // remove links
+        .replace(/\*\*/g, '')              // remove bold
+        .trim();
+      if (description.length > 300) description = description.substring(0, 297) + '...';
+      if (description.length === 0) description = null;
     }
 
-    const channelId = process.env.DISCORD_CHANNEL_ISSUES;
-    const channel = await this.client.channels.fetch(channelId);
-
-    if (!channel) return;
-
-    const { EmbedBuilder } = require('discord.js');
+    const actor = issue.creator?.name || 'Someone';
+    const assignee = issue.assignee?.name || 'Unassigned';
+    const type = issue.labelIds?.length ? (issue.labels?.[0]?.name || 'Issue') : 'Issue';
 
     const embed = new EmbedBuilder()
-      .setColor(0xFFA500)
-      .setTitle(`Issue Updated: ${issue.identifier}`)
-      .setDescription(issue.title)
-      .addFields(
-        { name: 'New Status', value: issue.state?.name || 'Unknown', inline: true },
-      )
+      .setColor(0x5E6AD2)
+      .setAuthor({ name: `${actor} created a new issue` })
+      .setTitle(`${issue.identifier} - ${issue.title}`)
       .setURL(issue.url)
-      .setTimestamp();
-
-    await channel.send({ embeds: [embed] });
-  }
-
-  async handleComment(comment) {
-    const channelId = process.env.DISCORD_CHANNEL_ISSUES;
-    const channel = await this.client.channels.fetch(channelId);
-
-    if (!channel) return;
-
-    const { EmbedBuilder } = require('discord.js');
-
-    const embed = new EmbedBuilder()
-      .setColor(0x00FF00)
-      .setTitle(`💬 New Comment on ${comment.issue?.identifier}`)
-      .setDescription(comment.body?.substring(0, 200) + '...')
       .addFields(
-        { name: 'Author', value: comment.user?.name || 'Unknown', inline: true },
+        { name: 'Type',        value: issue.state?.name || 'Unknown', inline: true },
+        { name: 'Assigned To', value: assignee, inline: true },
       )
-      .setURL(comment.issue?.url)
       .setTimestamp();
 
-    await channel.send({ embeds: [embed] });
-  }
+    if (description) {
+      embed.addFields({ name: 'Description', value: description, inline: false });
+    }
 
-  getPriorityText(priority) {
-    const priorities = {
-      0: '⚪ No priority',
-      1: '🔥 Urgent',
-      2: '⚠️ High',
-      3: '📋 Medium',
-      4: '📝 Low',
-    };
-    return priorities[priority] || 'Unknown';
+    await channel.send({ embeds: [embed] });
   }
 
   start() {
