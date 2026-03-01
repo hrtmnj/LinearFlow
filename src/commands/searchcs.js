@@ -89,6 +89,20 @@ module.exports = {
         }
       }
 
+      // Get reporter from the Discord attachment subtitle
+      // Subtitle format: "#channel-name - User#1234 :: Issue INK-123 created"
+      let reportedBy = null;
+      const attachments = await issue.attachments();
+      for (const attachment of attachments.nodes) {
+        if (attachment.subtitle) {
+          const match = attachment.subtitle.match(/^#.+? - (.+?) ::/);
+          if (match) {
+            reportedBy = match[1];
+            break;
+          }
+        }
+      }
+
       // Get decline/archive reason from comments if archived or canceled
       let declineReason = null;
       if (stateName.toLowerCase() === 'canceled' || stateName.toLowerCase() === 'archive') {
@@ -147,12 +161,13 @@ module.exports = {
         embed.setDescription(`*Note: This ticket was originally **${ticketId}** but has been moved to a different team.*`);
       }
 
+      // Add reporter if found
+      if (reportedBy) {
+        embed.addFields({ name: 'Reported By', value: reportedBy, inline: false });
+      }
+
       // Add user description
-      embed.addFields({
-        name: 'Description',
-        value: userDescription,
-        inline: false
-      });
+      embed.addFields({ name: 'Description', value: userDescription, inline: false });
 
       // Add duplicate info if exists
       if (duplicateInfo) {
