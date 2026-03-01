@@ -31,8 +31,8 @@ class WebhookServer {
   async handleLinearWebhook(payload) {
     console.log('Received webhook:', payload.type);
 
-    if (payload.type !== 'Issue') {
-      console.log('Ignoring event type:', payload.type);
+    if (payload.type !== 'Issue' || payload.action !== 'create') {
+      console.log('Ignoring event since its not a creation:', payload.type, payload.action);
       return;
     }
 
@@ -79,7 +79,7 @@ class WebhookServer {
       .setURL(issue.url)
       .addFields(
         { name: 'Type',        value: issue.state?.name || 'Unknown', inline: true },
-        { name: 'Assigned To', value: assignee, inline: true },
+        { name: 'Assigned To', value: assignee,                       inline: true },
       )
       .setTimestamp();
 
