@@ -70,16 +70,29 @@ class WebhookServer {
 
     const actorName = actor?.name || 'Someone';
     const assignee = issue.assignee?.name || 'Unassigned';
-    const type = issue.labelIds?.length ? (issue.labels?.[0]?.name || 'Issue') : 'Issue';
+
+    // Type comes from the "Type" label group (Bug, Task, HOTFIX etc)
+    const typeLabel = issue.labels?.find(l => ['Bug', 'Task', 'HOTFIX'].includes(l.name));
+    const type = typeLabel?.name || 'Unknown';
+
+    const status = issue.state?.name || 'Unknown';
+
+    const typeColors = {
+      'Bug':    0xe74c3c,
+      'HOTFIX': 0xff0000,
+      'Task':   0x5E6AD2,
+    };
+    const embedColor = typeColors[type] ?? 0x5E6AD2;
 
     const embed = new EmbedBuilder()
-      .setColor(0x5E6AD2)
+      .setColor(embedColor)
       .setAuthor({ name: `${actorName} created a new issue` })
       .setTitle(`${issue.identifier} - ${issue.title}`)
       .setURL(issue.url)
       .addFields(
-        { name: 'Type',        value: issue.state?.name || 'Unknown', inline: true },
-        { name: 'Assigned To', value: assignee,                       inline: true },
+        { name: 'Type',        value: type,    inline: true },
+        { name: 'Status',      value: status,  inline: true },
+        { name: 'Assigned To', value: assignee, inline: true },
       )
       .setTimestamp();
 
