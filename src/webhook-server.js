@@ -47,8 +47,8 @@ class WebhookServer {
     // Filter: Only process issues from specific teams
     const teamId = payload.data?.team?.id;
     if (teamId !== process.env.LINEAR_TEAM_GATEWAY) {
-      console.log('Ignoring event from team:', teamId);
-      return;
+      //console.log('Ignoring event from team:', teamId);
+      //return;
     }
 
     // Route to appropriate handler
