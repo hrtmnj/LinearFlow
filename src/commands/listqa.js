@@ -8,10 +8,10 @@ module.exports = {
     .addIntegerOption(option =>
       option
         .setName('amount')
-        .setDescription('Number of tickets to display (max 50)')
+        .setDescription('Number of tickets to display (max 150)')
         .setRequired(false)
         .setMinValue(1)
-        .setMaxValue(50)
+        .setMaxValue(150)
     ),
 
   async execute(interaction) {
@@ -25,7 +25,7 @@ module.exports = {
 
       const teamId = process.env.LINEAR_TEAM_GATEWAY;
       const qaLabelId = process.env.LINEAR_LABEL_QA;
-      const requestedAmount = interaction.options.getInteger('amount') || 50; // Default to 50 if not specified
+      const requestedAmount = interaction.options.getInteger('amount') || 150; // Default to 150 if not specified
 
       // Check if required env vars are set
       if (!teamId || !qaLabelId) {
@@ -36,11 +36,11 @@ module.exports = {
       }
 
       // Validate amount (extra safety check even though Discord validates min/max)
-      if (requestedAmount > 50) {
+      if (requestedAmount > 150) {
         const errorEmbed = new EmbedBuilder()
           .setColor(0xFF0000)
           .setTitle('Error')
-          .setDescription('You cannot request more than 50 tickets. Please use a number between 1 and 50.')
+          .setDescription('You cannot request more than 150 tickets. Please use a number between 1 and 150.')
           .setTimestamp();
 
         await interaction.editReply({ embeds: [errorEmbed] });
@@ -88,8 +88,8 @@ module.exports = {
         return;
       }
 
-      // Determine if pagination is needed (more than 10 items)
-      const needsPagination = qaIssues.length > 10;
+      // Determine if pagination is needed (more than 20 items)
+      const needsPagination = qaIssues.length > 20;
 
       if (!needsPagination) {
         // Simple embed without pagination
@@ -116,8 +116,8 @@ module.exports = {
         return;
       }
 
-      // Pagination setup for 10+ items
-      const itemsPerPage = 10;
+      // Pagination setup for 20+ items
+      const itemsPerPage = 20;
       const totalPages = Math.ceil(qaIssues.length / itemsPerPage);
       let currentPage = 0;
 
